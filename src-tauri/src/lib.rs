@@ -1,10 +1,12 @@
 mod activity;
+mod foreground;
 mod island;
 mod lyrics;
 mod media;
 mod monitor;
 mod power;
 mod shelf;
+mod tray;
 mod window;
 
 use tauri::Manager;
@@ -15,6 +17,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(island::IslandShared::default())
+        .manage(foreground::ForegroundShared::default())
+        .manage(tray::PeekState::default())
         .manage(monitor::MonitorControl::default())
         .setup(|app| {
             if let Some(main_window) = app.get_webview_window("main") {
@@ -24,6 +28,12 @@ pub fn run() {
 
                 activity::start_activity_watcher(app.handle(), main_window.clone());
                 island::start_cursor_watcher(app.handle(), main_window);
+            }
+            foreground::start_foreground_watcher(app.handle());
+
+            // Ikon tray tidak boleh menjatuhkan island kalau gagal dibuat.
+            if let Err(error) = tray::init(app.handle()) {
+                eprintln!("gagal membuat ikon tray: {error}");
             }
             media::start_media_watcher(app.handle());
             monitor::start_monitor(app.handle());
@@ -35,6 +45,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            foreground::get_foreground_busy,
+            tray::get_peek_mode,
             island::set_island_hitbox,
             lyrics::get_lyrics,
             media::get_media_info,

@@ -14,7 +14,12 @@ import SystemView, { type SystemStats } from "../../components/island/SystemView
 import { useLyrics } from "../../hooks/useLyrics";
 import PomodoroView, { PHASE_MS, formatClock, type PomodoroPhase } from "../../components/island/PomodoroView";
 import { useCountdown } from "../../hooks/useCountdown";
+import { useForegroundBusy } from "../../hooks/useForegroundBusy";
+import { PEEK_VISIBLE_PX, useIslandPeek } from "../../hooks/useIslandPeek";
 import { useFileDrop, useShelfImport } from "../../hooks/useShelf";
+import { usePeekMode } from "../../hooks/usePeekMode";
+import WaterView from "../../components/island/WaterView";
+import { useWaterReminder } from "../../hooks/useWaterReminder";
 
 type IslandState = "compact" | "expanded";
 
@@ -43,6 +48,7 @@ const EXPANDED_SIZE = {
   },
   system: { width: 290, height: 138 },
   pomodoro: { width: 290, height: 138 },
+  water: { width: 290, height: 150 },
   shelf: { width: 400, height: 192 },
 } as const;
 
@@ -97,12 +103,21 @@ function IslandPage() {
   const [alerting, setAlerting] = useState(false);
 
   const view: IslandView = ISLAND_PAGES[pageIndex];
+  const water = useWaterReminder();
 
   // Quick Shelf: file yang diseret ke island dibuka otomatis ke halaman Shelf lalu disimpan.
   const [shelfVersion, setShelfVersion] = useState(0);
   const importer = useShelfImport(() => setShelfVersion((v) => v + 1));
   const { importPaths } = importer;
   const draggingFile = useFileDrop((paths) => void importPaths(paths));
+
+  // Mode peek: saat aplikasi lain aktif, island yang sedang compact bersembunyi ke atas.
+  // Mendekatkan kursor memunculkannya lagi, lalu alur hover-expand berjalan seperti biasa.
+  const foregroundBusy = useForegroundBusy();
+  const peekMode = usePeekMode();
+  const peeking = (peekMode === "always" || foregroundBusy) && state === "compact" && presence === "away" && !alerting && !draggingFile;
+
+  const peekY = useIslandPeek(peeking, COMPACT_SIZE.height);
 
   const hoverExpandArmed = useRef(true);
 
@@ -126,6 +141,8 @@ function IslandPage() {
 
   const targetW = target.width;
   const targetH = target.height;
+  // Saat bersembunyi, area yang bereaksi terhadap kursor hanya sisa tipis di tepi atas layar.
+  const hitboxH = peeking ? PEEK_VISIBLE_PX : targetH;
 
   const w = useMotionValue<number>(COMPACT_SIZE.width);
   const h = useMotionValue<number>(COMPACT_SIZE.height);
@@ -134,8 +151,8 @@ function IslandPage() {
 
   // 1. Sinkronisasi ukuran hitbox dengan Rust.
   useEffect(() => {
-    invoke("set_island_hitbox", { width: targetW, height: targetH }).catch(console.error);
-  }, [targetW, targetH]);
+    invoke("set_island_hitbox", { width: targetW, height: hitboxH }).catch(console.error);
+  }, [targetW, hitboxH]);
 
   // 2. Animasi ukuran dan bentuk.
   useEffect(() => {
@@ -162,7 +179,7 @@ function IslandPage() {
     if (presence === "over" && state === "compact" && hoverExpandArmed.current) {
       next = "expanded";
       delay = HOVER_EXPAND_DELAY_MS;
-    } else if (presence === "away" && state === "expanded" && !alerting && !draggingFile && !importer.importing) {
+    } else if (presence === "away" && state === "expanded" && !alerting && !water.due && !draggingFile && !importer.importing) {
       next = "compact";
       delay = AUTO_COLLAPSE_DELAY_MS;
     }
@@ -196,7 +213,7 @@ function IslandPage() {
     return () => {
       unlisten.then((stop) => stop());
     };
-  }, []);
+  }, [presence, state, alerting, water.due, draggingFile, importer.importing]);
 
   // 7. Monitoring hanya menyala saat halaman Sistem terlihat.
   useEffect(() => {
@@ -221,6 +238,14 @@ function IslandPage() {
     setPageIndex(ISLAND_PAGES.indexOf("pomodoro"));
     beep();
   }, [alerting]);
+
+  useEffect(() => {
+    if (!water.due) return;
+    setState("expanded");
+    setDirection(1);
+    setPageIndex(ISLAND_PAGES.indexOf("water"));
+    beep();
+  }, [water.due]);
 
   // 10. File diseret ke island: buka, tampilkan halaman Shelf.
   useEffect(() => {
@@ -337,12 +362,13 @@ function IslandPage() {
     media: mediaPage,
     system: <SystemView stats={stats} />,
     pomodoro: <PomodoroView phase={phase} remainingMs={timer.remainingMs} running={timer.running} alerting={alerting} onToggle={togglePomodoro} onReset={timer.reset} onSkip={skipPhase} />,
+    water: <WaterView water={water} />,
     shelf: <IslandShelf active={state === "expanded" && view === "shelf"} version={shelfVersion} dragging={draggingFile} importer={importer} />,
   };
 
   return (
     <main className="flex h-full w-full items-start justify-center">
-      <motion.div onClick={handleClick} style={{ width: w, height: h }} className="relative flex cursor-pointer select-none items-center justify-center text-white">
+      <motion.div onClick={handleClick} style={{ width: w, height: h, y: peekY }} className="relative flex cursor-pointer select-none items-center justify-center text-white">
         <IslandShape width={w} height={h} radius={radius} ear={ear} />
 
         <div className="relative z-10 h-full w-full overflow-hidden" style={{ clipPath: "inset(0 12px 0 12px)" }}>
