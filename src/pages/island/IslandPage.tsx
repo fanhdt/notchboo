@@ -8,19 +8,19 @@ import ControlButton from "../../components/island/ControlButton";
 import IslandShape from "../../components/island/IslandShape";
 import { LyricsInline, LyricsScroll } from "../../components/island/LyricsScroll";
 import ProgressBar, { type PlaybackState } from "../../components/island/ProgressBar";
-import ShelfLauncher from "../../components/island/ShelfLauncher";
+import IslandNav, { ISLAND_PAGES, type IslandView } from "../../components/island/IslandNav";
+import IslandShelf from "../../components/island/IslandShelf";
 import SystemView, { type SystemStats } from "../../components/island/SystemView";
 import { useLyrics } from "../../hooks/useLyrics";
 import PomodoroView, { PHASE_MS, formatClock, type PomodoroPhase } from "../../components/island/PomodoroView";
 import { useCountdown } from "../../hooks/useCountdown";
+import { useFileDrop, useShelfImport } from "../../hooks/useShelf";
 
 type IslandState = "compact" | "expanded";
 
-const PAGES = ["media", "system", "pomodoro", "shelf"] as const;
-type IslandView = (typeof PAGES)[number];
-
 type LyricMode = "side" | "inline";
 type Layout = "plain" | "side" | "inline";
+type SizeKey = Layout | "shelf";
 type Presence = "over" | "away";
 
 type MediaInfo = {
@@ -36,9 +36,14 @@ type MediaAction = "previous" | "playPause" | "next";
 const COMPACT_SIZE = { width: 150, height: 30 } as const;
 
 const EXPANDED_SIZE = {
-  plain: { width: 290, height: 106 },
-  inline: { width: 290, height: 128 },
-  side: { width: 380, height: 120 },
+  media: {
+    plain: { width: 290, height: 138 },
+    inline: { width: 290, height: 160 },
+    side: { width: 380, height: 152 },
+  },
+  system: { width: 290, height: 138 },
+  pomodoro: { width: 290, height: 138 },
+  shelf: { width: 400, height: 192 },
 } as const;
 
 const SHAPE = {
@@ -91,9 +96,13 @@ function IslandPage() {
   const [phase, setPhase] = useState<PomodoroPhase>("focus");
   const [alerting, setAlerting] = useState(false);
 
-  const view: IslandView = PAGES[pageIndex];
-  const hasPrev = pageIndex > 0;
-  const hasNext = pageIndex < PAGES.length - 1;
+  const view: IslandView = ISLAND_PAGES[pageIndex];
+
+  // Quick Shelf: file yang diseret ke island dibuka otomatis ke halaman Shelf lalu disimpan.
+  const [shelfVersion, setShelfVersion] = useState(0);
+  const importer = useShelfImport(() => setShelfVersion((v) => v + 1));
+  const { importPaths } = importer;
+  const draggingFile = useFileDrop((paths) => void importPaths(paths));
 
   const hoverExpandArmed = useRef(true);
 
@@ -104,10 +113,11 @@ function IslandPage() {
 
   // Ukuran hanya diperbarui saat di halaman media, halaman lain memakai ukuran terakhir.
   // Kalau tidak, island menyusut saat pindah halaman dan kursor keluar dari hitbox.
-  const sizeLayoutRef = useRef<Layout>("plain");
-  if (view === "media") sizeLayoutRef.current = layout;
+  const sizeLayoutRef = useRef<SizeKey>("plain");
 
-  const target = state === "compact" ? COMPACT_SIZE : EXPANDED_SIZE[sizeLayoutRef.current];
+  if (view === "media") sizeLayoutRef.current = layout;
+  else if (view === "shelf") sizeLayoutRef.current = "shelf";
+  const target = state === "compact" ? COMPACT_SIZE : view === "media" ? EXPANDED_SIZE.media[layout] : EXPANDED_SIZE[view];
 
   const timer = useCountdown(PHASE_MS[phase], () => {
     setAlerting(true);
@@ -152,7 +162,7 @@ function IslandPage() {
     if (presence === "over" && state === "compact" && hoverExpandArmed.current) {
       next = "expanded";
       delay = HOVER_EXPAND_DELAY_MS;
-    } else if (presence === "away" && state === "expanded" && !alerting) {
+    } else if (presence === "away" && state === "expanded" && !alerting && !draggingFile && !importer.importing) {
       next = "compact";
       delay = AUTO_COLLAPSE_DELAY_MS;
     }
@@ -162,7 +172,7 @@ function IslandPage() {
     const nextState = next;
     const timer = setTimeout(() => setState(nextState), delay);
     return () => clearTimeout(timer);
-  }, [presence, state, alerting]);
+  }, [presence, state, alerting, draggingFile, importer.importing]);
 
   // 5. Info lagu dan status putar.
   useEffect(() => {
@@ -208,9 +218,17 @@ function IslandPage() {
     if (!alerting) return;
     setState("expanded");
     setDirection(1);
-    setPageIndex(PAGES.indexOf("pomodoro"));
+    setPageIndex(ISLAND_PAGES.indexOf("pomodoro"));
     beep();
   }, [alerting]);
+
+  // 10. File diseret ke island: buka, tampilkan halaman Shelf.
+  useEffect(() => {
+    if (!draggingFile) return;
+    setState("expanded");
+    setDirection(1);
+    setPageIndex(ISLAND_PAGES.indexOf("shelf"));
+  }, [draggingFile]);
 
   function handleClick() {
     if (alerting) {
@@ -236,10 +254,10 @@ function IslandPage() {
     setPhase((p) => (p === "focus" ? "break" : "focus"));
   }
 
-  function goPage(step: -1 | 1) {
-    const next = pageIndex + step;
-    if (next < 0 || next >= PAGES.length) return;
-    setDirection(step);
+  function selectPage(target: IslandView) {
+    const next = ISLAND_PAGES.indexOf(target);
+    if (next === pageIndex) return;
+    setDirection(next > pageIndex ? 1 : -1);
     setPageIndex(next);
   }
 
@@ -319,7 +337,7 @@ function IslandPage() {
     media: mediaPage,
     system: <SystemView stats={stats} />,
     pomodoro: <PomodoroView phase={phase} remainingMs={timer.remainingMs} running={timer.running} alerting={alerting} onToggle={togglePomodoro} onReset={timer.reset} onSkip={skipPhase} />,
-    shelf: <ShelfLauncher />,
+    shelf: <IslandShelf active={state === "expanded" && view === "shelf"} version={shelfVersion} dragging={draggingFile} importer={importer} />,
   };
 
   return (
@@ -335,16 +353,9 @@ function IslandPage() {
             </div>
           ) : (
             <>
-              {/* Tombol geser kiri/kanan di tepi island */}
-              <div className="absolute left-4 top-1/2 z-20 -translate-y-1/2">
-                <ControlButton label="Halaman sebelumnya" disabled={!hasPrev} onPress={() => goPage(-1)}>
-                  <path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
-                </ControlButton>
-              </div>
-              <div className="absolute right-4 top-1/2 z-20 -translate-y-1/2">
-                <ControlButton label="Halaman berikutnya" disabled={!hasNext} onPress={() => goPage(1)}>
-                  <path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
-                </ControlButton>
+              {/* Baris ikon untuk pindah halaman */}
+              <div className="absolute left-1/2 top-1.5 z-20 -translate-x-1/2">
+                <IslandNav current={view} onSelect={selectPage} />
               </div>
 
               {/* Tombol mode lirik: pojok kanan bawah */}
@@ -363,7 +374,7 @@ function IslandPage() {
               )}
 
               {/* Area halaman dengan animasi geser */}
-              <div className="relative h-full w-full px-11">
+              <div className="relative h-full w-full">
                 <AnimatePresence initial={false} custom={direction}>
                   <motion.div
                     key={view}
@@ -373,7 +384,7 @@ function IslandPage() {
                     animate="center"
                     exit="exit"
                     transition={{ duration: 0.18, ease: "easeOut" }}
-                    className="absolute inset-y-0 left-11 right-11 flex items-center justify-center"
+                    className="absolute bottom-0 left-6 right-6 top-8 flex items-center justify-center"
                   >
                     {pages[view]}
                   </motion.div>

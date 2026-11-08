@@ -13,10 +13,9 @@ use tauri_plugin_opener::OpenerExt;
 use super::model::{
     now_ms, Expiry, ImportOutcome, ListFilter, NewText, OpenOutcome, Settings, ShelfItem, TextUpdate,
 };
-use super::window::SHELF_WINDOW_LABEL;
 use super::{ops, storage::is_risky_extension, ShelfState};
 
-/// Dikirim ke window Shelf sebelum tiap file disalin (payload: `ImportProgress`).
+/// Dikirim ke semua window (Shelf dan island) sebelum tiap file disalin (payload: `ImportProgress`).
 const IMPORT_PROGRESS_EVENT: &str = "shelf-import-progress";
 
 /// Daftar item. `body` hanya potongan awal; pakai `shelf_get` untuk isi lengkap.
@@ -87,7 +86,7 @@ pub fn shelf_pick_and_import(app: AppHandle, window: Window, state: State<'_, Sh
 
 fn import(app: &AppHandle, state: &ShelfState, paths: Vec<PathBuf>) -> Result<ImportOutcome, String> {
     ops::import_paths(state, &paths, |progress| {
-        let _ = app.emit_to(SHELF_WINDOW_LABEL, IMPORT_PROGRESS_EVENT, progress);
+        let _ = app.emit(IMPORT_PROGRESS_EVENT, progress);
     })
 }
 
