@@ -6,6 +6,7 @@
 //! - `state`: state bersama untuk semua command (tanpa Tauri)
 //! - `ops`: operasi gabungan database + disk (tanpa Tauri)
 //! - `commands`: command Tauri yang dipanggil React
+//! - `window`: window `shelf` (dibuat sekali, dipakai ulang)
 
 pub mod commands;
 mod db;
@@ -13,6 +14,7 @@ mod model;
 mod ops;
 mod state;
 mod storage;
+pub mod window;
 #[cfg(test)]
 mod testutil;
 

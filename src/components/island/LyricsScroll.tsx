@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 
-import type { LyricLine } from "../hooks/useLyrics";
+import type { LyricLine } from "../../hooks/useLyrics";
 import type { PlaybackState } from "./ProgressBar";
 
 // Posisi baris aktif dari tepi atas area lirik (px).
