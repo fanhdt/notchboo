@@ -13,11 +13,11 @@ use tauri_plugin_opener::OpenerExt;
 use super::model::{
     now_ms, Expiry, ImportOutcome, ListFilter, NewText, OpenOutcome, Settings, ShelfItem, TextUpdate,
 };
+use super::window::SHELF_WINDOW_LABEL;
 use super::{ops, storage::is_risky_extension, ShelfState};
 
 /// Dikirim ke window Shelf sebelum tiap file disalin (payload: `ImportProgress`).
 const IMPORT_PROGRESS_EVENT: &str = "shelf-import-progress";
-const SHELF_WINDOW_LABEL: &str = "shelf";
 
 /// Daftar item. `body` hanya potongan awal; pakai `shelf_get` untuk isi lengkap.
 #[tauri::command(async)]

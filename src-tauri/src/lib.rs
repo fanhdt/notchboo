@@ -54,7 +54,8 @@ pub fn run() {
             shelf::commands::shelf_open,
             shelf::commands::shelf_reveal,
             shelf::commands::shelf_get_settings,
-            shelf::commands::shelf_set_default_expiry
+            shelf::commands::shelf_set_default_expiry,
+            shelf::window::shelf_open_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
