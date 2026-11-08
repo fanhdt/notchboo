@@ -303,9 +303,10 @@ function App() {
           </div>
         </div>
 
-        {progress}
-
+        {/* Lirik di atas progress bar */}
         {layout === "inline" && <LyricsInline lines={lyrics ?? []} playback={playback} />}
+
+        {progress}
 
         {controls}
       </div>
