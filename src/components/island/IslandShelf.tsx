@@ -122,7 +122,7 @@ export default function IslandShelf({ active, version, dragging, importer }: Pro
       ) : (
         <ul className="flex flex-col gap-0.5">
           {items.map((item) => (
-            <li key={item.id}>
+            <li key={item.id} className="group flex items-center gap-0.5">
               <button
                 type="button"
                 onClick={(event) => {
@@ -130,7 +130,7 @@ export default function IslandShelf({ active, version, dragging, importer }: Pro
                   void activate(item);
                 }}
                 title={item.kind === "snippet" ? "Salin snippet" : item.kind === "file" ? "Buka file" : "Buka di Quick Shelf"}
-                className="flex h-8 w-full items-center gap-2 rounded-lg px-1.5 text-left transition-colors hover:bg-white/10 active:bg-white/15"
+                className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 text-left transition-colors hover:bg-white/10 active:bg-white/15"
               >
                 <span className={item.pinned ? "text-[#c8e63c]" : "text-white/50"}>
                   <Icon name={item.pinned ? "pin" : KIND_ICON[item.kind]} className="h-3.5 w-3.5" />
@@ -138,6 +138,21 @@ export default function IslandShelf({ active, version, dragging, importer }: Pro
                 <span className="min-w-0 flex-1 truncate text-xs">{item.fileName ?? item.title}</span>
                 <span className="shrink-0 text-[10px] text-white/40">{rowMeta(item)}</span>
               </button>
+
+              {item.kind === "file" && (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    shelf.reveal(item.id).catch((reason) => setNotice(messageOf(reason)));
+                  }}
+                  title="Tampilkan di folder"
+                  aria-label="Tampilkan di folder"
+                  className="flex h-8 w-7 shrink-0 items-center justify-center rounded-lg text-white/45 transition-colors hover:bg-white/10 hover:text-white active:bg-white/15"
+                >
+                  <Icon name="folder" className="h-3.5 w-3.5" />
+                </button>
+              )}
             </li>
           ))}
         </ul>

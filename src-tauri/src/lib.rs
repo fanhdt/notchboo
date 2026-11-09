@@ -1,11 +1,31 @@
 mod activity;
-mod foreground;
 mod island;
 mod lyrics;
-mod media;
 mod monitor;
+
+// Bagian yang memakai API sistem punya satu berkas per platform; bentuk publiknya sama.
+#[cfg(windows)]
+mod foreground;
+#[cfg(target_os = "macos")]
+#[path = "foreground_macos.rs"]
+mod foreground;
+
+#[cfg(windows)]
+mod media;
+#[cfg(target_os = "macos")]
+#[path = "media_macos.rs"]
+mod media;
+
+#[cfg(windows)]
 mod power;
+#[cfg(target_os = "macos")]
+#[path = "power_macos.rs"]
+mod power;
+
+#[cfg(target_os = "macos")]
+mod mac;
 mod shelf;
+mod tasks;
 mod tray;
 mod window;
 
@@ -21,8 +41,14 @@ pub fn run() {
         .manage(tray::PeekState::default())
         .manage(monitor::MonitorControl::default())
         .setup(|app| {
+            // macOS: tanpa ikon Dock dan menu bar, seperti aplikasi tray.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             if let Some(main_window) = app.get_webview_window("main") {
                 window::position_top_center(&main_window)?;
+                #[cfg(target_os = "macos")]
+                mac::float_above_menu_bar(&main_window)?;
                 main_window.set_ignore_cursor_events(true)?;
                 main_window.show()?;
 
@@ -67,7 +93,10 @@ pub fn run() {
             shelf::commands::shelf_reveal,
             shelf::commands::shelf_get_settings,
             shelf::commands::shelf_set_default_expiry,
-            shelf::window::shelf_open_window
+            shelf::window::shelf_open_window,
+            tasks::tasks_load,
+            tasks::tasks_save,
+            tasks::tasks_open_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -2,8 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 
-/** `whenBusy`: bersembunyi saat aplikasi lain aktif. `always`: selalu bersembunyi saat island tidak dibuka. */
-export type PeekMode = "whenBusy" | "always";
+/**
+ * `whenBusy`: bersembunyi saat aplikasi lain aktif. `always`: selalu bersembunyi saat island tidak dibuka.
+ * `standby`: island selalu terbuka.
+ */
+export type PeekMode = "whenBusy" | "always" | "standby";
 
 /** Mode peek yang dipilih lewat menu ikon tray. Berubah langsung saat menu diklik. */
 export function usePeekMode(): PeekMode {

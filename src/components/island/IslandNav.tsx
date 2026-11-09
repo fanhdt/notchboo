@@ -1,5 +1,5 @@
 /** Halaman island, berurutan seperti di rel ikon (atas ke bawah). */
-export const ISLAND_PAGES = ["media", "system", "pomodoro", "water", "shelf"] as const;
+export const ISLAND_PAGES = ["media", "system", "pomodoro", "water", "tasks", "shelf", "sound"] as const;
 export type IslandView = (typeof ISLAND_PAGES)[number];
 
 const NAV: Record<IslandView, { label: string; path: string }> = {
@@ -19,9 +19,17 @@ const NAV: Record<IslandView, { label: string; path: string }> = {
     label: "Minum",
     path: "M12 2c-5.33 4.55-8 8.48-8 11.8 0 4.98 3.8 8.2 8 8.2s8-3.22 8-8.2c0-3.32-2.67-7.25-8-11.8",
   },
+  tasks: {
+    label: "Tugas",
+    path: "M16.59 7.58 10 14.17l-3.59-3.58L5 12l5 5 8-8zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2m0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8",
+  },
   shelf: {
     label: "Quick Shelf",
     path: "M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8z",
+  },
+  sound: {
+    label: "Suara",
+    path: "M3 9v6h4l5 5V4L7 9zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02M14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77",
   },
 };
 

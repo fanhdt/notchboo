@@ -18,11 +18,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-windows = { version = "0.62.2", features = ["Foundation", "Media_Control", "Storage_Streams", "Win32_System_Power", "Win32_System_WinRT"] }
 base64 = "0.23.1"
 sysinfo = { version = "0.40", default-features = false, features = ["system", "disk", "network"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "query"] }
@@ -39,4 +38,8 @@ panic = "abort"
 strip = true
 
 [target."cfg(windows)".dependencies]
+windows = { version = "0.62.2", features = ["Foundation", "Media_Control", "Storage_Streams", "Win32_System_Power", "Win32_System_WinRT"] }
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"

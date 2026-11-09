@@ -18,8 +18,10 @@ import { useForegroundBusy } from "../../hooks/useForegroundBusy";
 import { PEEK_VISIBLE_PX, useIslandPeek } from "../../hooks/useIslandPeek";
 import { useFileDrop, useShelfImport } from "../../hooks/useShelf";
 import { usePeekMode } from "../../hooks/usePeekMode";
+import TasksView from "../../components/island/Taskview";
+import SoundView from "../../components/island/SoundView";
+import { useIslandAlarms } from "../../hooks/useIslandAlarms";
 import WaterView from "../../components/island/WaterView";
-import { useWaterReminder } from "../../hooks/useWaterReminder";
 
 type IslandState = "compact" | "expanded";
 
@@ -49,6 +51,8 @@ const EXPANDED_SIZE = {
   system: { width: 290, height: 138 },
   pomodoro: { width: 290, height: 138 },
   water: { width: 290, height: 150 },
+  tasks: { width: 290, height: 176 },
+  sound: { width: 290, height: 160 },
   shelf: { width: 400, height: 192 },
 } as const;
 
@@ -103,7 +107,12 @@ function IslandPage() {
   const [alerting, setAlerting] = useState(false);
 
   const view: IslandView = ISLAND_PAGES[pageIndex];
-  const water = useWaterReminder();
+  const alarms = useIslandAlarms((page) => {
+    setState("expanded");
+    setDirection(1);
+    setPageIndex(ISLAND_PAGES.indexOf(page));
+  }, alerting);
+  const { water, tasks, sound } = alarms;
 
   // Quick Shelf: file yang diseret ke island dibuka otomatis ke halaman Shelf lalu disimpan.
   const [shelfVersion, setShelfVersion] = useState(0);
@@ -115,7 +124,7 @@ function IslandPage() {
   // Mendekatkan kursor memunculkannya lagi, lalu alur hover-expand berjalan seperti biasa.
   const foregroundBusy = useForegroundBusy();
   const peekMode = usePeekMode();
-  const peeking = (peekMode === "always" || foregroundBusy) && state === "compact" && presence === "away" && !alerting && !draggingFile;
+  const peeking = peekMode !== "standby" && (peekMode === "always" || foregroundBusy) && state === "compact" && presence === "away" && !alerting && !draggingFile;
 
   const peekY = useIslandPeek(peeking, COMPACT_SIZE.height);
 
@@ -171,6 +180,9 @@ function IslandPage() {
 
   // 4. Hover-expand dan auto-collapse.
   useEffect(() => {
+    // Standby: island dipaksa terbuka oleh efek 12, jadi tidak ada hover-expand atau auto-collapse.
+    if (peekMode === "standby") return;
+
     if (presence === "away") hoverExpandArmed.current = true;
 
     let next: IslandState | null = null;
@@ -179,7 +191,7 @@ function IslandPage() {
     if (presence === "over" && state === "compact" && hoverExpandArmed.current) {
       next = "expanded";
       delay = HOVER_EXPAND_DELAY_MS;
-    } else if (presence === "away" && state === "expanded" && !alerting && !water.due && !draggingFile && !importer.importing) {
+    } else if (presence === "away" && state === "expanded" && !alerting && !alarms.anyDue && !draggingFile && !importer.importing) {
       next = "compact";
       delay = AUTO_COLLAPSE_DELAY_MS;
     }
@@ -189,7 +201,7 @@ function IslandPage() {
     const nextState = next;
     const timer = setTimeout(() => setState(nextState), delay);
     return () => clearTimeout(timer);
-  }, [presence, state, alerting, draggingFile, importer.importing]);
+  }, [presence, state, alerting, alarms.anyDue, draggingFile, importer.importing, peekMode]);
 
   // 5. Info lagu dan status putar.
   useEffect(() => {
@@ -247,6 +259,11 @@ function IslandPage() {
     beep();
   }, [water.due]);
 
+  // Mode standby: island selalu terbuka.
+  useEffect(() => {
+    if (peekMode === "standby" && state !== "expanded") setState("expanded");
+  }, [peekMode, state]);
+
   // 10. File diseret ke island: buka, tampilkan halaman Shelf.
   useEffect(() => {
     if (!draggingFile) return;
@@ -260,6 +277,7 @@ function IslandPage() {
       setAlerting(false); // setelah ini, island collapse sendiri kalau kursor sudah jauh
       return;
     }
+    if (peekMode === "standby") return;
     if (state === "compact") {
       setState("expanded");
     } else {
@@ -363,6 +381,8 @@ function IslandPage() {
     system: <SystemView stats={stats} />,
     pomodoro: <PomodoroView phase={phase} remainingMs={timer.remainingMs} running={timer.running} alerting={alerting} onToggle={togglePomodoro} onReset={timer.reset} onSkip={skipPhase} />,
     water: <WaterView water={water} />,
+    tasks: <TasksView api={tasks} />,
+    sound: <SoundView sound={sound} />,
     shelf: <IslandShelf active={state === "expanded" && view === "shelf"} version={shelfVersion} dragging={draggingFile} importer={importer} />,
   };
 
@@ -401,7 +421,7 @@ function IslandPage() {
 
               {/* Area halaman dengan animasi geser */}
               <div className="relative h-full w-full">
-                <AnimatePresence initial={false} custom={direction}>
+                <AnimatePresence initial={false} custom={direction} mode="wait">
                   <motion.div
                     key={view}
                     custom={direction}

@@ -1,7 +1,7 @@
 //! Ikon Notchboo di system tray (area panah ke atas di kanan bawah Windows).
 //!
-//! Menunya memilih mode peek dan menyediakan tombol keluar. Pilihan disimpan di folder konfigurasi
-//! aplikasi supaya bertahan setelah aplikasi dibuka ulang.
+//! Menunya memilih mode tampilan island dan menyediakan tombol keluar. Pilihan disimpan di folder
+//! konfigurasi aplikasi supaya bertahan setelah aplikasi dibuka ulang.
 
 use std::{fs, path::PathBuf, sync::Mutex};
 
@@ -18,17 +18,38 @@ const SETTINGS_FILE: &str = "peek-mode.txt";
 
 const ID_WHEN_BUSY: &str = "peek_when_busy";
 const ID_ALWAYS: &str = "peek_always";
+const ID_STANDBY: &str = "standby";
 const ID_QUIT: &str = "quit";
 
-/// Kapan island bersembunyi ke atas (peek).
+/// Perilaku island: kapan bersembunyi ke atas (peek) atau tetap terbuka (standby).
 #[derive(Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PeekMode {
-    /// Hanya saat ada aplikasi lain yang aktif di depan.
+    /// Bersembunyi hanya saat ada aplikasi lain yang aktif di depan.
     #[default]
     WhenBusy,
-    /// Selalu, selama island tidak sedang dibuka.
+    /// Selalu bersembunyi, selama island tidak sedang dibuka.
     Always,
+    /// Island selalu terbuka (expand) dan tidak menutup sendiri.
+    Standby,
+}
+
+impl PeekMode {
+    fn as_setting(self) -> &'static str {
+        match self {
+            PeekMode::WhenBusy => "whenBusy",
+            PeekMode::Always => "always",
+            PeekMode::Standby => "standby",
+        }
+    }
+
+    fn from_setting(text: &str) -> Self {
+        match text.trim() {
+            "always" => PeekMode::Always,
+            "standby" => PeekMode::Standby,
+            _ => PeekMode::WhenBusy,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -49,7 +70,7 @@ fn settings_path(app: &AppHandle) -> Option<PathBuf> {
 fn load_mode(app: &AppHandle) -> PeekMode {
     settings_path(app)
         .and_then(|path| fs::read_to_string(path).ok())
-        .map(|text| if text.trim() == "always" { PeekMode::Always } else { PeekMode::WhenBusy })
+        .map(|text| PeekMode::from_setting(&text))
         .unwrap_or_default()
 }
 
@@ -61,16 +82,17 @@ fn save_mode(app: &AppHandle, mode: PeekMode) {
         let _ = fs::create_dir_all(dir);
     }
     // Gagal menyimpan bukan masalah fatal: pilihan tetap berlaku sampai aplikasi ditutup.
-    let _ = fs::write(path, if mode == PeekMode::Always { "always" } else { "whenBusy" });
+    let _ = fs::write(path, mode.as_setting());
 }
 
-fn apply_mode(app: &AppHandle, mode: PeekMode, when_busy: &CheckMenuItem<Wry>, always: &CheckMenuItem<Wry>) {
+fn apply_mode(app: &AppHandle, mode: PeekMode, checks: &[(PeekMode, CheckMenuItem<Wry>)]) {
     *app.state::<PeekState>().mode.lock().expect("peek mutex rusak") = mode;
     save_mode(app, mode);
 
-    // Item centang bisa berubah sendiri saat diklik, jadi kedua item disetel ulang secara eksplisit.
-    let _ = when_busy.set_checked(mode == PeekMode::WhenBusy);
-    let _ = always.set_checked(mode == PeekMode::Always);
+    // Item centang bisa berubah sendiri saat diklik, jadi semua item disetel ulang secara eksplisit.
+    for (item_mode, item) in checks {
+        let _ = item.set_checked(*item_mode == mode);
+    }
 
     let _ = app.emit(MODE_EVENT, mode);
 }
@@ -80,12 +102,15 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     let mode = load_mode(app);
     *app.state::<PeekState>().mode.lock().expect("peek mutex rusak") = mode;
 
-    let when_busy = CheckMenuItem::with_id(app, ID_WHEN_BUSY, "Peek saat aplikasi lain aktif", true, mode == PeekMode::WhenBusy, None::<&str>)?;
-    let always = CheckMenuItem::with_id(app, ID_ALWAYS, "Peek terus-menerus", true, mode == PeekMode::Always, None::<&str>)?;
-    let quit = MenuItem::with_id(app, ID_QUIT, "Keluar", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&when_busy, &always, &PredefinedMenuItem::separator(app)?, &quit])?;
+    let make = |id: &str, label: &str, item_mode: PeekMode| CheckMenuItem::with_id(app, id, label, true, mode == item_mode, None::<&str>);
 
-    let (menu_when_busy, menu_always) = (when_busy.clone(), always.clone());
+    let when_busy = make(ID_WHEN_BUSY, "Peek saat aplikasi lain aktif", PeekMode::WhenBusy)?;
+    let always = make(ID_ALWAYS, "Peek terus-menerus", PeekMode::Always)?;
+    let standby = make(ID_STANDBY, "Standby (selalu terbuka)", PeekMode::Standby)?;
+    let quit = MenuItem::with_id(app, ID_QUIT, "Keluar", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&when_busy, &always, &standby, &PredefinedMenuItem::separator(app)?, &quit])?;
+
+    let checks = vec![(PeekMode::WhenBusy, when_busy.clone()), (PeekMode::Always, always.clone()), (PeekMode::Standby, standby.clone())];
 
     let mut tray = TrayIconBuilder::with_id("main").tooltip("Notchboo").menu(&menu);
     if let Some(icon) = app.default_window_icon() {
@@ -93,8 +118,9 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     }
 
     tray.on_menu_event(move |app, event| match event.id().as_ref() {
-        ID_WHEN_BUSY => apply_mode(app, PeekMode::WhenBusy, &menu_when_busy, &menu_always),
-        ID_ALWAYS => apply_mode(app, PeekMode::Always, &menu_when_busy, &menu_always),
+        ID_WHEN_BUSY => apply_mode(app, PeekMode::WhenBusy, &checks),
+        ID_ALWAYS => apply_mode(app, PeekMode::Always, &checks),
+        ID_STANDBY => apply_mode(app, PeekMode::Standby, &checks),
         ID_QUIT => app.exit(0),
         _ => {}
     })
