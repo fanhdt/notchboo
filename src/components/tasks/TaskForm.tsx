@@ -19,6 +19,9 @@ const REPEAT_OPTIONS: { id: Repeat; label: string }[] = [
 ];
 
 const FIELD = "h-9 rounded-lg border border-white/10 bg-white/5 px-2.5 text-sm text-white placeholder:text-white/35 focus:border-[#c8e63c]/50 focus:outline-none";
+/** Daftar pilihan bawaan sistem memakai warna latar select; kalau transparan jadi putih dan teksnya tidak terbaca. */
+const SELECT = "h-9 rounded-lg border border-white/10 bg-[#1c1c1f] px-2.5 text-sm text-white focus:border-[#c8e63c]/50 focus:outline-none";
+const OPTION = "bg-[#1c1c1f] text-white";
 
 /** Form tugas untuk membuat dan mengubah: judul, kategori, tanggal, jam pengingat, dan pengulangan. */
 export default function TaskForm({ initial, categories, submitLabel, onSubmit, onCancel }: Props) {
@@ -61,10 +64,12 @@ export default function TaskForm({ initial, categories, submitLabel, onSubmit, o
 
       <label className="flex flex-col gap-1 text-[11px] text-white/50">
         Kategori
-        <select value={categoryId ?? ""} onChange={(event) => setCategoryId(event.target.value || null)} className={FIELD}>
-          <option value="">Tanpa kategori</option>
+        <select value={categoryId ?? ""} onChange={(event) => setCategoryId(event.target.value || null)} className={SELECT}>
+          <option value="" className={OPTION}>
+            Tanpa kategori
+          </option>
           {categories.map((category) => (
-            <option key={category.id} value={category.id}>
+            <option key={category.id} value={category.id} className={OPTION}>
               {category.name}
             </option>
           ))}
