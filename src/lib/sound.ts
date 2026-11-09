@@ -1,12 +1,13 @@
 // Suara alarm. Semua nada disintesis dengan Web Audio, jadi tidak butuh file audio.
 
-export type AlarmKind = "pomodoro" | "water" | "task";
-export type AlarmSound = "beep" | "chime" | "bell" | "digital" | "off";
+export type AlarmKind = "pomodoro" | "water" | "task" | "message";
+export type AlarmSound = "beep" | "chime" | "bell" | "digital" | "pop" | "off";
 
 export const ALARM_KINDS: { id: AlarmKind; label: string }[] = [
   { id: "pomodoro", label: "Pomodoro" },
   { id: "water", label: "Minum" },
   { id: "task", label: "Tugas" },
+  { id: "message", label: "Pesan" },
 ];
 
 export const ALARM_SOUNDS: { id: AlarmSound; label: string }[] = [
@@ -14,6 +15,7 @@ export const ALARM_SOUNDS: { id: AlarmSound; label: string }[] = [
   { id: "chime", label: "Denting" },
   { id: "bell", label: "Lonceng" },
   { id: "digital", label: "Digital" },
+  { id: "pop", label: "Pop" },
   { id: "off", label: "Senyap" },
 ];
 
@@ -32,7 +34,7 @@ const STORAGE_KEY = "notchboo.sound";
 
 const DEFAULTS: SoundSettings = {
   volume: 0.7,
-  sounds: { pomodoro: "beep", water: "chime", task: "bell" },
+  sounds: { pomodoro: "beep", water: "chime", task: "bell", message: "pop" },
   repeat: true,
 };
 
@@ -54,7 +56,7 @@ export function loadSoundSettings(): SoundSettings {
 
     const repeat = typeof parsed.repeat === "boolean" ? parsed.repeat : DEFAULTS.repeat;
 
-    return { volume, sounds: { pomodoro: pick("pomodoro"), water: pick("water"), task: pick("task") }, repeat };
+    return { volume, sounds: { pomodoro: pick("pomodoro"), water: pick("water"), task: pick("task"), message: pick("message") }, repeat };
   } catch {
     return DEFAULTS;
   }
@@ -114,6 +116,11 @@ export function playSound(sound: AlarmSound, volume: number) {
       case "digital":
         [0, 0.18, 0.36].forEach((start) => tone(1000, start, 0.1, "square", 0.5));
         total = 0.6;
+        break;
+      case "pop": // dua nada pendek naik, cocok untuk notifikasi pesan
+        tone(740, 0, 0.12);
+        tone(988, 0.09, 0.22);
+        total = 0.5;
         break;
     }
 

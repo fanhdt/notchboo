@@ -19,6 +19,7 @@ const SETTINGS_FILE: &str = "peek-mode.txt";
 const ID_WHEN_BUSY: &str = "peek_when_busy";
 const ID_ALWAYS: &str = "peek_always";
 const ID_STANDBY: &str = "standby";
+const ID_TEST_NOTICE: &str = "test_notice";
 const ID_QUIT: &str = "quit";
 
 /// Perilaku island: kapan bersembunyi ke atas (peek) atau tetap terbuka (standby).
@@ -107,8 +108,9 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     let when_busy = make(ID_WHEN_BUSY, "Peek saat aplikasi lain aktif", PeekMode::WhenBusy)?;
     let always = make(ID_ALWAYS, "Peek terus-menerus", PeekMode::Always)?;
     let standby = make(ID_STANDBY, "Standby (selalu terbuka)", PeekMode::Standby)?;
+    let test_notice = MenuItem::with_id(app, ID_TEST_NOTICE, "Uji notifikasi pesan", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, ID_QUIT, "Keluar", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&when_busy, &always, &standby, &PredefinedMenuItem::separator(app)?, &quit])?;
+    let menu = Menu::with_items(app, &[&when_busy, &always, &standby, &PredefinedMenuItem::separator(app)?, &test_notice, &quit])?;
 
     let checks = vec![(PeekMode::WhenBusy, when_busy.clone()), (PeekMode::Always, always.clone()), (PeekMode::Standby, standby.clone())];
 
@@ -121,6 +123,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         ID_WHEN_BUSY => apply_mode(app, PeekMode::WhenBusy, &checks),
         ID_ALWAYS => apply_mode(app, PeekMode::Always, &checks),
         ID_STANDBY => apply_mode(app, PeekMode::Standby, &checks),
+        ID_TEST_NOTICE => crate::notifications::emit_sample(app),
         ID_QUIT => app.exit(0),
         _ => {}
     })

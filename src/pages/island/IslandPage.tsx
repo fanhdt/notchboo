@@ -5,6 +5,7 @@ import { AnimatePresence, animate, motion, useMotionValue } from "motion/react";
 
 import BangbooEyes from "../../components/island/BangbooEyes";
 import ControlButton from "../../components/island/ControlButton";
+import MessageNotice, { NOTICE_SIZE } from "../../components/island/MessageNotice";
 import IslandShape from "../../components/island/IslandShape";
 import { LyricsInline, LyricsScroll } from "../../components/island/LyricsScroll";
 import ProgressBar, { type PlaybackState } from "../../components/island/ProgressBar";
@@ -21,6 +22,7 @@ import { usePeekMode } from "../../hooks/usePeekMode";
 import TasksView from "../../components/island/Taskview";
 import SoundView from "../../components/island/SoundView";
 import { useIslandAlarms } from "../../hooks/useIslandAlarms";
+import { useMessageNotice } from "../../hooks/useMessageNotice";
 import WaterView from "../../components/island/WaterView";
 
 type IslandState = "compact" | "expanded";
@@ -52,7 +54,7 @@ const EXPANDED_SIZE = {
   pomodoro: { width: 290, height: 138 },
   water: { width: 290, height: 150 },
   tasks: { width: 290, height: 176 },
-  sound: { width: 290, height: 160 },
+  sound: { width: 290, height: 190 },
   shelf: { width: 400, height: 192 },
 } as const;
 
@@ -62,6 +64,8 @@ const SHAPE = {
 } as const;
 
 const SPRING = { type: "spring", stiffness: 400, damping: 32 } as const;
+// Pesan masuk: pegas lebih longgar supaya island "melompat" sedikit saat membesar.
+const NOTICE_SPRING = { type: "spring", stiffness: 320, damping: 17 } as const;
 
 const HOVER_EXPAND_DELAY_MS = 100;
 const AUTO_COLLAPSE_DELAY_MS = 100;
@@ -77,23 +81,6 @@ function stamp(info: PlaybackInfo | null): PlaybackState | null {
   return info ? { ...info, receivedAt: performance.now() } : null;
 }
 
-function beep() {
-  try {
-    const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.6);
-    osc.onended = () => ctx.close();
-  } catch {
-    // Audio tidak tersedia: abaikan.
-  }
-}
-
 function IslandPage() {
   const [state, setState] = useState<IslandState>("compact");
   const [pageIndex, setPageIndex] = useState(0);
@@ -106,6 +93,10 @@ function IslandPage() {
   const [phase, setPhase] = useState<PomodoroPhase>("focus");
   const [alerting, setAlerting] = useState(false);
 
+  // Pesan masuk (WhatsApp): island membesar sebentar dan menampilkannya.
+  const { notice, dismiss: dismissNotice } = useMessageNotice();
+  const noticeOn = notice !== null;
+
   const view: IslandView = ISLAND_PAGES[pageIndex];
   const alarms = useIslandAlarms((page) => {
     setState("expanded");
@@ -113,6 +104,13 @@ function IslandPage() {
     setPageIndex(ISLAND_PAGES.indexOf(page));
   }, alerting);
   const { water, tasks, sound } = alarms;
+
+  // Pesan masuk: bunyikan suara pesan sekali.
+  const noticeKey = notice?.key ?? null;
+  const playSound = sound.play;
+  useEffect(() => {
+    if (noticeKey !== null) playSound("message");
+  }, [noticeKey, playSound]);
 
   // Quick Shelf: file yang diseret ke island dibuka otomatis ke halaman Shelf lalu disimpan.
   const [shelfVersion, setShelfVersion] = useState(0);
@@ -124,7 +122,7 @@ function IslandPage() {
   // Mendekatkan kursor memunculkannya lagi, lalu alur hover-expand berjalan seperti biasa.
   const foregroundBusy = useForegroundBusy();
   const peekMode = usePeekMode();
-  const peeking = peekMode !== "standby" && (peekMode === "always" || foregroundBusy) && state === "compact" && presence === "away" && !alerting && !draggingFile;
+  const peeking = peekMode !== "standby" && (peekMode === "always" || foregroundBusy) && state === "compact" && presence === "away" && !alerting && !draggingFile && !noticeOn;
 
   const peekY = useIslandPeek(peeking, COMPACT_SIZE.height);
 
@@ -141,7 +139,7 @@ function IslandPage() {
 
   if (view === "media") sizeLayoutRef.current = layout;
   else if (view === "shelf") sizeLayoutRef.current = "shelf";
-  const target = state === "compact" ? COMPACT_SIZE : view === "media" ? EXPANDED_SIZE.media[layout] : EXPANDED_SIZE[view];
+  const target = noticeOn ? NOTICE_SIZE : state === "compact" ? COMPACT_SIZE : view === "media" ? EXPANDED_SIZE.media[layout] : EXPANDED_SIZE[view];
 
   const timer = useCountdown(PHASE_MS[phase], () => {
     setAlerting(true);
@@ -165,10 +163,11 @@ function IslandPage() {
 
   // 2. Animasi ukuran dan bentuk.
   useEffect(() => {
-    const shape = SHAPE[state];
-    const controls = [animate(w, targetW, SPRING), animate(h, targetH, SPRING), animate(radius, shape.radius, SPRING), animate(ear, shape.ear, SPRING)];
+    const shape = SHAPE[noticeOn ? "expanded" : state];
+    const spring = noticeOn ? NOTICE_SPRING : SPRING;
+    const controls = [animate(w, targetW, spring), animate(h, targetH, spring), animate(radius, shape.radius, spring), animate(ear, shape.ear, spring)];
     return () => controls.forEach((c) => c.stop());
-  }, [state, targetW, targetH, w, h, radius, ear]);
+  }, [state, noticeOn, targetW, targetH, w, h, radius, ear]);
 
   // 3. Posisi kursor dari Rust.
   useEffect(() => {
@@ -225,7 +224,7 @@ function IslandPage() {
     return () => {
       unlisten.then((stop) => stop());
     };
-  }, [presence, state, alerting, water.due, draggingFile, importer.importing]);
+  }, []);
 
   // 7. Monitoring hanya menyala saat halaman Sistem terlihat.
   useEffect(() => {
@@ -248,16 +247,7 @@ function IslandPage() {
     setState("expanded");
     setDirection(1);
     setPageIndex(ISLAND_PAGES.indexOf("pomodoro"));
-    beep();
   }, [alerting]);
-
-  useEffect(() => {
-    if (!water.due) return;
-    setState("expanded");
-    setDirection(1);
-    setPageIndex(ISLAND_PAGES.indexOf("water"));
-    beep();
-  }, [water.due]);
 
   // Mode standby: island selalu terbuka.
   useEffect(() => {
@@ -273,6 +263,11 @@ function IslandPage() {
   }, [draggingFile]);
 
   function handleClick() {
+    if (alarms.anyDue) return; // alarm harus dijawab lewat tombolnya
+    if (noticeOn) {
+      dismissNotice(); // klik menutup pesan lebih cepat
+      return;
+    }
     if (alerting) {
       setAlerting(false); // setelah ini, island collapse sendiri kalau kursor sudah jauh
       return;
@@ -392,7 +387,9 @@ function IslandPage() {
         <IslandShape width={w} height={h} radius={radius} ear={ear} />
 
         <div className="relative z-10 h-full w-full overflow-hidden" style={{ clipPath: "inset(0 12px 0 12px)" }}>
-          {state === "compact" ? (
+          {notice ? (
+            <MessageNotice key={notice.key} notice={notice} />
+          ) : state === "compact" ? (
             <div className="flex h-full w-full items-center justify-center gap-2">
               <BangbooEyes />
               {timer.running && <span className="text-[11px] font-medium tabular-nums text-[#c8e63c]">{formatClock(timer.remainingMs)}</span>}

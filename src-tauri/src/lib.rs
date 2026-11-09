@@ -2,6 +2,7 @@ mod activity;
 mod island;
 mod lyrics;
 mod monitor;
+mod notifications;
 
 // Bagian yang memakai API sistem punya satu berkas per platform; bentuk publiknya sama.
 #[cfg(windows)]
@@ -63,6 +64,7 @@ pub fn run() {
             }
             media::start_media_watcher(app.handle());
             monitor::start_monitor(app.handle());
+            notifications::start_notification_watcher(app.handle());
 
             // Quick Shelf: gagal membuka database tidak boleh menjatuhkan island.
             // Kegagalannya disimpan di state dan dilaporkan oleh tiap command shelf.
