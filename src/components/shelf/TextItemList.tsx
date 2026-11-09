@@ -3,7 +3,6 @@ import { useState } from "react";
 import { useItemActions, useShelfItems } from "../../hooks/useShelf";
 import type { ItemKind, ShelfItem } from "../../lib/shelf";
 import { EmptyState, ErrorBanner, LoadingState, Toast } from "./Feedback";
-import Icon from "./Icon";
 import TextCard from "./TextCard";
 import TextEditor from "./TextEditor";
 
@@ -55,16 +54,8 @@ export default function TextItemList({ kind, query, pinnedOnly }: Props) {
   return (
     <>
       <div className="flex h-full flex-col">
-        <div className="flex items-center justify-between px-3 pb-1 pt-3">
+        <div className="flex items-center gap-2 px-3">
           <span className="text-xs text-white/40">{list.loading ? "Memuat…" : `${list.items.length} item`}</span>
-          <button
-            type="button"
-            onClick={() => setEditor({ item: null })}
-            className="flex items-center gap-1.5 rounded-lg bg-[#c8e63c] px-3 py-1.5 text-xs font-semibold text-black transition-opacity hover:opacity-90"
-          >
-            <Icon name="add" className="h-3.5 w-3.5" />
-            {copy.add}
-          </button>
         </div>
 
         <div className="flex flex-col gap-2 px-3 pt-1">
@@ -92,7 +83,7 @@ export default function TextItemList({ kind, query, pinnedOnly }: Props) {
                   onTogglePin={() => void list.togglePin(item)}
                   onSetExpiry={(expiry) => void list.setExpiry(item, expiry)}
                   onDelete={() => void list.remove(item)}
-                  onCopy={kind === "snippet" ? () => void actions.copyBody(item) : undefined}
+                  onCopy={() => void actions.copyBody(item)}
                 />
               ))}
             </ul>
@@ -100,15 +91,7 @@ export default function TextItemList({ kind, query, pinnedOnly }: Props) {
         </div>
       </div>
 
-      {editor && (
-        <TextEditor
-          kind={kind}
-          initial={editor.item}
-          error={list.actionError}
-          onSave={(input) => list.saveText(editor.item, kind, input)}
-          onClose={closeEditor}
-        />
-      )}
+      {editor && <TextEditor kind={kind} initial={editor.item} error={list.actionError} onSave={(input) => list.saveText(editor.item, kind, input)} onClose={closeEditor} />}
 
       <Toast message={actions.notice} />
     </>

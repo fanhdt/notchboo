@@ -1,19 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 
-import {
-  onImportProgress,
-  shelf,
-  type Expiry,
-  type ImportOutcome,
-  type ImportProgress,
-  type ItemKind,
-  type NewText,
-  type Settings,
-  type ShelfItem,
-  type SkippedFile,
-  type TextInput,
-} from "../lib/shelf";
+import { onImportProgress, shelf, type Expiry, type ImportOutcome, type ImportProgress, type ItemKind, type NewText, type Settings, type ShelfItem, type SkippedFile, type TextInput } from "../lib/shelf";
 
 function messageOf(reason: unknown): string {
   return reason instanceof Error ? reason.message : String(reason);
@@ -21,10 +9,12 @@ function messageOf(reason: unknown): string {
 
 function useDebounced<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);
+
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(value), delayMs);
     return () => clearTimeout(timer);
   }, [value, delayMs]);
+
   return debounced;
 }
 
@@ -61,15 +51,26 @@ export function useShelfItems(kind: ItemKind, query: string, pinnedOnly: boolean
 
   const refresh = useCallback(async () => {
     const request = ++latestRequest.current;
+
     try {
-      const result = await shelf.list({ kind, query: debouncedQuery, pinnedOnly });
-      if (request !== latestRequest.current) return; // ada permintaan yang lebih baru
+      const result = await shelf.list({
+        kind,
+        query: debouncedQuery,
+        pinnedOnly,
+      });
+
+      if (request !== latestRequest.current) return;
+
       setItems(result);
       setError(null);
     } catch (reason) {
-      if (request === latestRequest.current) setError(messageOf(reason));
+      if (request === latestRequest.current) {
+        setError(messageOf(reason));
+      }
     } finally {
-      if (request === latestRequest.current) setLoading(false);
+      if (request === latestRequest.current) {
+        setLoading(false);
+      }
     }
   }, [kind, debouncedQuery, pinnedOnly]);
 
@@ -82,7 +83,9 @@ export function useShelfItems(kind: ItemKind, query: string, pinnedOnly: boolean
   // supaya perubahan dan item kedaluwarsa tercermin.
   useEffect(() => {
     const onFocus = () => void refresh();
+
     window.addEventListener("focus", onFocus);
+
     return () => window.removeEventListener("focus", onFocus);
   }, [refresh]);
 
@@ -90,8 +93,10 @@ export function useShelfItems(kind: ItemKind, query: string, pinnedOnly: boolean
     async (work: () => Promise<unknown>): Promise<boolean> => {
       try {
         await work();
+
         setActionError(null);
         await refresh();
+
         return true;
       } catch (reason) {
         setActionError(messageOf(reason));
@@ -106,15 +111,28 @@ export function useShelfItems(kind: ItemKind, query: string, pinnedOnly: boolean
     loading,
     error,
     actionError,
+
     dismissActionError: () => setActionError(null),
+
     refresh,
+
     togglePin: async (item) => void (await act(() => shelf.setPinned(item.id, !item.pinned))),
+
     setExpiry: async (item, expiry) => void (await act(() => shelf.setExpiry(item.id, expiry))),
+
     remove: async (item) => void (await act(() => shelf.remove(item.id))),
+
     saveText: (editing, textKind, input) =>
       act(() => {
-        if (editing) return shelf.updateText(editing.id, input);
-        const created: NewText = { kind: textKind, ...input };
+        if (editing) {
+          return shelf.updateText(editing.id, input);
+        }
+
+        const created: NewText = {
+          kind: textKind,
+          ...input,
+        };
+
         return shelf.addText(created);
       }),
   };
@@ -126,14 +144,21 @@ export interface UseItemActions {
   /** Pesan sesaat setelah aksi berhasil (mis. "Disalin"). */
   notice: string | null;
   error: string | null;
+
   /** File berisiko yang menunggu persetujuan pengguna. */
   pendingRisky: ShelfItem | null;
+
   openFile: (item: ShelfItem) => Promise<void>;
   confirmRisky: () => Promise<void>;
   cancelRisky: () => void;
   reveal: (item: ShelfItem) => Promise<void>;
+
   /** Isi lengkap lewat `shelf_get`, karena daftar hanya membawa potongan awal. */
   copyBody: (item: ShelfItem) => Promise<void>;
+
+  /** Menyalin seluruh catatan yang sedang ditampilkan. */
+  copyAll: (items: ShelfItem[]) => Promise<void>;
+
   loadFull: (item: ShelfItem) => Promise<ShelfItem | null>;
   clearFeedback: () => void;
 }
@@ -146,7 +171,9 @@ export function useItemActions(): UseItemActions {
   // Pesan sukses hilang sendiri.
   useEffect(() => {
     if (notice === null) return;
+
     const timer = setTimeout(() => setNotice(null), 1800);
+
     return () => clearTimeout(timer);
   }, [notice]);
 
@@ -163,24 +190,52 @@ export function useItemActions(): UseItemActions {
     notice,
     error,
     pendingRisky,
+
     openFile: (item) =>
       guard(async () => {
         const outcome = await shelf.open(item.id);
-        if (outcome === "needsConfirmation") setPendingRisky(item);
+
+        if (outcome === "needsConfirmation") {
+          setPendingRisky(item);
+        }
       }),
+
     confirmRisky: async () => {
       const item = pendingRisky;
       setPendingRisky(null);
-      if (item) await guard(async () => void (await shelf.open(item.id, true)));
+
+      if (item) {
+        await guard(async () => void (await shelf.open(item.id, true)));
+      }
     },
+
     cancelRisky: () => setPendingRisky(null),
+
     reveal: (item) => guard(() => shelf.reveal(item.id)),
+
+    // Salin satu catatan dengan mengambil isi lengkap dari backend.
     copyBody: (item) =>
       guard(async () => {
         const full = await shelf.get(item.id);
+
         await navigator.clipboard.writeText(full.body ?? "");
-        setNotice("Disalin ke clipboard");
+
+        setNotice("Catatan disalin ke clipboard");
       }),
+
+    // Salin seluruh catatan yang sedang ditampilkan.
+    // Setiap item diambil menggunakan shelf.get agar tidak hanya menyalin preview.
+    copyAll: (items) =>
+      guard(async () => {
+        const fullItems = await Promise.all(items.map((item) => shelf.get(item.id)));
+
+        const content = fullItems.map((item) => `${item.title}\n${item.body ?? ""}`).join("\n\n--------------------\n\n");
+
+        await navigator.clipboard.writeText(content);
+
+        setNotice(`${fullItems.length} catatan disalin ke clipboard`);
+      }),
+
     loadFull: async (item) => {
       try {
         setError(null);
@@ -190,6 +245,7 @@ export function useItemActions(): UseItemActions {
         return null;
       }
     },
+
     clearFeedback: () => {
       setError(null);
       setNotice(null);
@@ -222,12 +278,17 @@ export function useShelfImport(onImported: () => void): UseShelfImport {
   useEffect(() => {
     let stop: (() => void) | undefined;
     let cancelled = false;
+
     onImportProgress(setProgress)
       .then((unlisten) => {
-        if (cancelled) unlisten();
-        else stop = unlisten;
+        if (cancelled) {
+          unlisten();
+        } else {
+          stop = unlisten;
+        }
       })
       .catch(console.error);
+
     return () => {
       cancelled = true;
       stop?.();
@@ -238,10 +299,15 @@ export function useShelfImport(onImported: () => void): UseShelfImport {
     setImporting(true);
     setError(null);
     setSkipped([]);
+
     try {
       const outcome = await work();
+
       setSkipped(outcome.skipped);
-      if (outcome.imported.length > 0) onImportedRef.current();
+
+      if (outcome.imported.length > 0) {
+        onImportedRef.current();
+      }
     } catch (reason) {
       setError(messageOf(reason));
     } finally {
@@ -255,11 +321,14 @@ export function useShelfImport(onImported: () => void): UseShelfImport {
     progress,
     skipped,
     error,
+
     dismiss: () => {
       setError(null);
       setSkipped([]);
     },
+
     pick: () => run(() => shelf.pickAndImport()),
+
     importPaths: (paths) => run(() => shelf.importPaths(paths)),
   };
 }
@@ -267,6 +336,7 @@ export function useShelfImport(onImported: () => void): UseShelfImport {
 /** Mendeteksi file yang diseret ke window. Mengembalikan true selama file berada di atas window. */
 export function useFileDrop(onDrop: (paths: string[]) => void): boolean {
   const [dragging, setDragging] = useState(false);
+
   const onDropRef = useRef(onDrop);
   onDropRef.current = onDrop;
 
@@ -277,18 +347,25 @@ export function useFileDrop(onDrop: (paths: string[]) => void): boolean {
     getCurrentWebview()
       .onDragDropEvent((event) => {
         const payload = event.payload;
+
         if (payload.type === "enter" || payload.type === "over") {
           setDragging(true);
         } else if (payload.type === "leave") {
           setDragging(false);
         } else if (payload.type === "drop") {
           setDragging(false);
-          if (payload.paths.length > 0) onDropRef.current(payload.paths);
+
+          if (payload.paths.length > 0) {
+            onDropRef.current(payload.paths);
+          }
         }
       })
       .then((unlisten) => {
-        if (cancelled) unlisten();
-        else stop = unlisten;
+        if (cancelled) {
+          unlisten();
+        } else {
+          stop = unlisten;
+        }
       })
       .catch(console.error);
 
@@ -319,11 +396,13 @@ export function useShelfSettings(): UseShelfSettings {
 
   useEffect(() => {
     let active = true;
+
     shelf
       .getSettings()
       .then((value) => active && setSettings(value))
       .catch((reason) => active && setError(messageOf(reason)))
       .finally(() => active && setLoading(false));
+
     return () => {
       active = false;
     };
@@ -331,7 +410,9 @@ export function useShelfSettings(): UseShelfSettings {
 
   useEffect(() => {
     if (!saved) return;
+
     const timer = setTimeout(() => setSaved(false), 1800);
+
     return () => clearTimeout(timer);
   }, [saved]);
 
@@ -340,10 +421,13 @@ export function useShelfSettings(): UseShelfSettings {
     loading,
     error,
     saved,
+
     setDefaultExpiry: async (expiry) => {
       try {
         setError(null);
+
         await shelf.setDefaultExpiry(expiry);
+
         setSettings({ defaultExpiry: expiry });
         setSaved(true);
       } catch (reason) {
