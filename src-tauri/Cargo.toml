@@ -1,6 +1,6 @@
 [package]
-name = "notchboo"
-version = "0.1.0"
+name = "mocchi"
+version = "0.1.1"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2024"
@@ -11,7 +11,7 @@ edition = "2024"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "notchboo_lib"
+name = "mocchi_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -26,6 +26,8 @@ base64 = "0.23.1"
 sysinfo = { version = "0.40", default-features = false, features = ["system", "disk", "network"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "query"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
 rusqlite = { version = "0.41", features = ["bundled"] }
 
 

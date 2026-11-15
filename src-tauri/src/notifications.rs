@@ -30,8 +30,8 @@ pub fn emit_sample(app: &AppHandle) {
         MESSAGE_EVENT,
         MessageNotice {
             app: "whatsapp".into(),
-            sender: "Bangboo".into(),
-            body: "Wise-sama, ini contoh pesan masuk. Tampilannya sudah pas?".into(),
+            sender: "Mochi".into(),
+            body: "Ini contoh pesan masuk. Tampilannya sudah pas?".into(),
         },
     );
 }

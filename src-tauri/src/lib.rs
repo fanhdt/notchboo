@@ -1,4 +1,5 @@
 mod activity;
+mod autostart;
 mod island;
 mod lyrics;
 mod monitor;
@@ -35,6 +36,10 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Harus plugin pertama: menjalankan aplikasi kedua kali (mis. setelah mulai-otomatis) tidak
+        // membuka salinan baru. Island yang sudah berjalan tetap satu-satunya.
+        .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(island::IslandShared::default())
@@ -57,6 +62,9 @@ pub fn run() {
                 island::start_cursor_watcher(app.handle(), main_window);
             }
             foreground::start_foreground_watcher(app.handle());
+
+            // Pertama kali dijalankan: nyalakan mulai-otomatis (bisa dimatikan dari menu tray).
+            autostart::enable_on_first_run(app.handle());
 
             // Ikon tray tidak boleh menjatuhkan island kalau gagal dibuat.
             if let Err(error) = tray::init(app.handle()) {
