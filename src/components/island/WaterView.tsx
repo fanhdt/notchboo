@@ -2,7 +2,8 @@ import { motion } from "motion/react";
 import { useState, type MouseEvent, type ReactNode } from "react";
 
 import { WATER_GLASS_SIZES_ML, WATER_GOALS_ML, WATER_INTERVALS_MIN, WATER_SNOOZE_MIN, type WaterReminder } from "../../hooks/useWaterReminder";
-import { MochiBody, MOCHI_CREAM, type Face } from "./Mochi";
+import BreathingMochi from "./BreathingMochi";
+import { MOCHI_CREAM, type Face } from "./Mochi";
 
 const WATER_COLOR = "#7dd3fc";
 const BLUSH = "#f2a7a0";
@@ -71,9 +72,7 @@ function Tracker({ water, onOpenSettings }: { water: WaterReminder; onOpenSettin
       <div className="relative shrink-0" style={{ width: RING_SIZE, height: RING_SIZE }}>
         <Ring percent={percent} color={color} />
 
-        <motion.div className="absolute inset-0 m-auto h-10 w-10" animate={{ scaleY: [1, 1.06, 1], scaleX: [1, 0.98, 1] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }} style={{ transformOrigin: "50% 100%" }}>
-          <MochiBody face={face} className="h-full w-full" />
-        </motion.div>
+        <BreathingMochi face={face} />
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -85,7 +84,7 @@ function Tracker({ water, onOpenSettings }: { water: WaterReminder; onOpenSettin
               </div>
             )}
             <div className="truncate text-base font-semibold leading-tight tabular-nums">
-              {fmtMl(totalMl)} <span className="text-[11px] font-medium text-white/50">/ {fmtMl(goalMl)} ml</span>
+              {fmtMl(totalMl)} <span className="text-caption font-medium text-white/50">/ {fmtMl(goalMl)} ml</span>
             </div>
           </div>
 
@@ -98,19 +97,19 @@ function Tracker({ water, onOpenSettings }: { water: WaterReminder; onOpenSettin
           )}
         </div>
 
-        <span className="w-fit rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none" style={{ color: statusColor, backgroundColor: `${statusColor}26` }}>
+        <span className="w-fit rounded-full px-1.5 py-0.5 text-micro font-semibold leading-none" style={{ color: statusColor, backgroundColor: `${statusColor}26` }}>
           {statusText}
         </span>
 
-        {!due && <span className="truncate text-[10px] leading-none text-white/45">{footnote}</span>}
+        {!due && <span className="truncate text-micro leading-none text-white/45">{footnote}</span>}
 
         <div className="flex items-center gap-1">
-          <button type="button" onClick={press(() => water.drink())} className="flex-1 rounded-full bg-sky-300 px-2 py-1.5 text-[11px] font-semibold leading-none text-black transition-opacity hover:opacity-90 active:opacity-75">
+          <button type="button" onClick={press(() => water.drink())} className="flex-1 rounded-full bg-sky-300 px-2 py-1.5 text-caption font-semibold leading-none text-black transition-opacity hover:opacity-90 active:opacity-75">
             +{glassMl} ml
           </button>
 
           {due ? (
-            <button type="button" onClick={press(water.snooze)} className="shrink-0 rounded-full bg-white/10 px-2.5 py-1.5 text-[11px] leading-none text-white/80 transition-colors hover:bg-white/20">
+            <button type="button" onClick={press(water.snooze)} className="shrink-0 rounded-full bg-white/10 px-2.5 py-1.5 text-caption leading-none text-white/80 transition-colors hover:bg-white/20">
               Nanti {WATER_SNOOZE_MIN} mnt
             </button>
           ) : (
@@ -137,7 +136,7 @@ function IconButton({ label, onPress, disabled = false, children }: { label: str
       aria-label={label}
       disabled={disabled}
       onClick={press(onPress)}
-      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-[11px] leading-none text-white/70 transition-colors hover:bg-white/20 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-white/10"
+      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-caption leading-none text-white/70 transition-colors hover:bg-white/20 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-white/10"
     >
       {children}
     </button>
@@ -177,11 +176,16 @@ function Ring({ percent, color }: { percent: number; color: string }) {
 function Settings({ water, onBack }: { water: WaterReminder; onBack: () => void }) {
   const fixed = water.mode === "fixed";
 
+  let modeHint: string;
+  if (!water.enabled) modeHint = "Pengingat mati. Tetap bisa mencatat minum.";
+  else if (fixed) modeHint = `Tiap ${water.intervalMin} mnt. Ketuk jeda untuk ganti.`;
+  else modeHint = "Hanya saat minummu tertinggal dari target.";
+
   return (
-    <div className="flex h-full w-full flex-col justify-center gap-1.5 overflow-y-auto py-1">
+    <div className="flex h-full w-full flex-col justify-center gap-0.75">
       <div className="flex items-center justify-between">
-        <button type="button" onClick={press(onBack)} className="rounded-full px-1.5 py-0.5 text-[11px] font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white">
-          ← Pengaturan
+        <button type="button" onClick={press(onBack)} className="rounded-full px-1.5 py-0.5 text-caption font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white">
+          ‹ Kembali
         </button>
 
         <button
@@ -190,9 +194,12 @@ function Settings({ water, onBack }: { water: WaterReminder; onBack: () => void 
           aria-checked={water.enabled}
           aria-label="Pengingat minum"
           onClick={press(() => water.setEnabled(!water.enabled))}
-          className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${water.enabled ? "bg-sky-300" : "bg-white/20"}`}
+          className="flex items-center gap-1.5 text-micro text-white/60 transition-colors hover:text-white"
         >
-          <span className={`absolute top-0.5 h-3 w-3 rounded-full transition-all ${water.enabled ? "left-3.5 bg-black" : "left-0.5 bg-white/70"}`} />
+          <span aria-hidden="true">Pengingat {water.enabled ? "aktif" : "mati"}</span>
+          <span className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${water.enabled ? "bg-sky-300" : "bg-white/20"}`}>
+            <span className={`absolute top-0.5 h-3 w-3 rounded-full transition-all ${water.enabled ? "left-3.5 bg-black" : "left-0.5 bg-white/70"}`} />
+          </span>
         </button>
       </div>
 
@@ -207,7 +214,7 @@ function Settings({ water, onBack }: { water: WaterReminder; onBack: () => void 
         </Chip>
       </Row>
 
-      <Row label="Mode">
+      <Row label="Ingatkan">
         <Chip active={!fixed} onClick={() => water.setMode("smart")} title="Hanya mengingatkan saat tertinggal dari target">
           Cerdas
         </Chip>
@@ -216,14 +223,15 @@ function Settings({ water, onBack }: { water: WaterReminder; onBack: () => void 
         </Chip>
         {fixed && (
           <Chip active onClick={() => water.setIntervalMin(nextOf(WATER_INTERVALS_MIN, water.intervalMin))} title="Ketuk untuk ganti jeda">
-            {water.intervalMin} mnt
+            Tiap {water.intervalMin} mnt
           </Chip>
         )}
       </Row>
+      <p className="pl-12.5 text-[9px] leading-tight text-white/45">{modeHint}</p>
 
-      <Row label="Jam">
+      <Row label="Jam aktif">
         <HourStepper label="Mulai" value={water.startHour} min={0} max={20} onChange={(hour) => water.setActiveHours(hour, water.endHour)} />
-        <span className="text-[10px] text-white/40">–</span>
+        <span className="text-micro text-white/40">–</span>
         <HourStepper label="Selesai" value={water.endHour} min={water.startHour + 4} max={24} onChange={(hour) => water.setActiveHours(water.startHour, hour)} />
       </Row>
 
@@ -235,7 +243,7 @@ function Settings({ water, onBack }: { water: WaterReminder; onBack: () => void 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className="w-9 shrink-0 text-[10px] text-white/45">{label}</span>
+      <span className="w-11 shrink-0 text-micro text-white/45">{label}</span>
       <div className="flex min-w-0 flex-wrap items-center gap-1">{children}</div>
     </div>
   );
@@ -248,7 +256,7 @@ function Chip({ active, onClick, title, children }: { active: boolean; onClick: 
       aria-pressed={active}
       title={title}
       onClick={press(onClick)}
-      className={`rounded-full px-2 py-0.5 text-[10px] font-medium leading-none transition-colors ${active ? "bg-white/25 text-white" : "bg-white/10 text-white/55 hover:bg-white/20 hover:text-white/80"}`}
+      className={`rounded-full px-1.5 py-0.5 text-micro font-medium leading-none transition-colors ${active ? "bg-white/25 text-white" : "bg-white/10 text-white/55 hover:bg-white/20 hover:text-white/80"}`}
     >
       {children}
     </button>
@@ -256,14 +264,14 @@ function Chip({ active, onClick, title, children }: { active: boolean; onClick: 
 }
 
 function HourStepper({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void }) {
-  const buttonClass = "flex h-4 w-4 items-center justify-center rounded-full bg-white/10 text-[10px] leading-none text-white/70 transition-colors hover:bg-white/20 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-white/10";
+  const buttonClass = "flex h-4 w-4 items-center justify-center rounded-full bg-white/10 text-micro leading-none text-white/70 transition-colors hover:bg-white/20 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-white/10";
 
   return (
     <div className="flex items-center gap-0.5">
       <button type="button" aria-label={`${label} lebih awal`} disabled={value <= min} onClick={press(() => onChange(value - 1))} className={buttonClass}>
         ‹
       </button>
-      <span className="w-5 text-center text-[11px] tabular-nums text-white/80">{String(value).padStart(2, "0")}</span>
+      <span className="w-8 text-center text-caption tabular-nums text-white/80">{String(value).padStart(2, "0")}.00</span>
       <button type="button" aria-label={`${label} lebih lambat`} disabled={value >= max} onClick={press(() => onChange(value + 1))} className={buttonClass}>
         ›
       </button>

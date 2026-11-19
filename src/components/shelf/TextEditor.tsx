@@ -42,7 +42,7 @@ export default function TextEditor({ kind, initial, error, onSave, onClose }: Pr
 
   return (
     <div
-      className="absolute inset-0 z-40 flex flex-col bg-[#111113]"
+      className="absolute inset-0 z-40 flex flex-col bg-surface"
       role="dialog"
       aria-modal="true"
       aria-label={initial ? COPY[kind].edit : COPY[kind].new}
@@ -56,7 +56,7 @@ export default function TextEditor({ kind, initial, error, onSave, onClose }: Pr
     >
       <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
         <h2 className="text-sm font-semibold text-white">{initial ? COPY[kind].edit : COPY[kind].new}</h2>
-        <span className="text-[11px] text-white/35">Ctrl+Enter untuk menyimpan</span>
+        <span className="text-caption text-white/35">Ctrl+Enter untuk menyimpan</span>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-2 p-3">
@@ -67,7 +67,7 @@ export default function TextEditor({ kind, initial, error, onSave, onClose }: Pr
             placeholder="Judul (opsional)"
             maxLength={200}
             aria-label="Judul"
-            className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white placeholder:text-white/35 focus:border-[#c8e63c]/50 focus:outline-none"
+            className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white placeholder:text-white/35 focus:border-accent/50 focus:outline-none"
           />
           {isSnippet && (
             <input
@@ -76,7 +76,7 @@ export default function TextEditor({ kind, initial, error, onSave, onClose }: Pr
               placeholder="Bahasa"
               maxLength={32}
               aria-label="Bahasa"
-              className="h-9 w-28 rounded-lg border border-white/10 bg-white/5 px-3 font-mono text-xs text-white placeholder:text-white/35 focus:border-[#c8e63c]/50 focus:outline-none"
+              className="h-9 w-28 rounded-lg border border-white/10 bg-white/5 px-3 font-mono text-xs text-white placeholder:text-white/35 focus:border-accent/50 focus:outline-none"
             />
           )}
         </div>
@@ -88,7 +88,7 @@ export default function TextEditor({ kind, initial, error, onSave, onClose }: Pr
           placeholder={COPY[kind].bodyPlaceholder}
           aria-label="Isi"
           spellCheck={!isSnippet}
-          className={`min-h-0 flex-1 resize-none rounded-lg border border-white/10 bg-white/5 p-3 text-sm leading-relaxed text-white placeholder:text-white/35 focus:border-[#c8e63c]/50 focus:outline-none ${
+          className={`min-h-0 flex-1 resize-none rounded-lg border border-white/10 bg-white/5 p-3 text-sm leading-relaxed text-white placeholder:text-white/35 focus:border-accent/50 focus:outline-none ${
             isSnippet ? "font-mono text-xs" : ""
           }`}
         />
@@ -100,12 +100,7 @@ export default function TextEditor({ kind, initial, error, onSave, onClose }: Pr
         <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-xs text-white/70 hover:bg-white/10">
           Batal
         </button>
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={!canSave}
-          className="rounded-lg bg-[#c8e63c] px-4 py-2 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-40"
-        >
+        <button type="button" onClick={() => void save()} disabled={!canSave} className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-40">
           {saving ? "Menyimpan…" : "Simpan"}
         </button>
       </div>

@@ -1,23 +1,11 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
-import { MochiBody, MOCHI_CREAM, type Face } from "./Mochi";
+import { useSystemStats, type SystemStats } from "../../hooks/useSystemStats";
+import BreathingMochi from "./BreathingMochi";
+import { MOCHI_CREAM, type Face } from "./Mochi";
 
 const BLUSH = "#f2a7a0";
 const ANGER = "#ef7b6c";
-
-type DiskStats = { usedBytes: number; totalBytes: number };
-type NetworkStats = { downBytesPerSec: number; upBytesPerSec: number };
-type BatteryStats = { percent: number; charging: boolean; onAc: boolean };
-
-/** Sama dengan struct `SystemStats` di Rust. */
-export type SystemStats = {
-  cpuPercent: number;
-  memoryUsedBytes: number;
-  memoryTotalBytes: number;
-  disk: DiskStats | null;
-  network: NetworkStats;
-  battery: BatteryStats | null;
-};
 
 const BYTES_PER_GB = 1024 ** 3;
 
@@ -164,7 +152,12 @@ function buildMetrics(stats: SystemStats | null): Metric[] {
   return metrics;
 }
 
-export default function SystemView({ stats }: { stats: SystemStats | null }) {
+/**
+ * Halaman Sistem. Monitoring di Rust menyala selama halaman ini terpasang dan mati saat ditutup,
+ * dan sampel yang masuk tiap detik hanya me-render halaman ini.
+ */
+export default function SystemView() {
+  const stats = useSystemStats();
   const [activeKey, setActiveKey] = useState("cpu");
 
   const metrics = buildMetrics(stats);
@@ -191,29 +184,27 @@ export default function SystemView({ stats }: { stats: SystemStats | null }) {
         <div className="relative shrink-0" style={{ width: RING_SIZE, height: RING_SIZE }}>
           <Ring percent={metric.percent} color={color} />
 
-          <motion.div className="absolute inset-0 m-auto h-10 w-10" animate={{ scaleY: [1, 1.06, 1], scaleX: [1, 0.98, 1] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }} style={{ transformOrigin: "50% 100%" }}>
-            <MochiBody face={metric.face} className="h-full w-full" />
-          </motion.div>
+          <BreathingMochi face={metric.face} />
         </div>
 
         <AnimatePresence mode="wait" initial={false}>
           <motion.div key={metric.key} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.14, ease: "easeOut" }} className="flex min-w-0 flex-col">
             <div className="flex items-center gap-1.5">
-              <span className="truncate text-xs font-medium text-[#f6e7cb]/70">{metric.label}</span>
-              <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none" style={{ color, backgroundColor: `${color}26` }}>
+              <span className="truncate text-xs font-medium text-cream/70">{metric.label}</span>
+              <span className="shrink-0 rounded-full px-1.5 py-0.5 text-micro font-semibold leading-none" style={{ color, backgroundColor: `${color}26` }}>
                 {metric.status}
               </span>
             </div>
 
-            <span className="truncate text-2xl font-semibold leading-tight tabular-nums text-[#f6e7cb]">{metric.value}</span>
+            <span className="truncate text-2xl font-semibold leading-tight tabular-nums text-cream">{metric.value}</span>
 
-            <span className="h-4 truncate text-xs leading-4 tabular-nums text-[#f6e7cb]/60">{metric.detail}</span>
+            <span className="h-4 truncate text-xs leading-4 tabular-nums text-cream/60">{metric.detail}</span>
           </motion.div>
         </AnimatePresence>
       </div>
 
       {/* Kanan: tombol pemilih metrik */}
-      <div role="tablist" aria-label="Pilih metrik" className="flex w-[46px] shrink-0 flex-col gap-0.5">
+      <div role="tablist" aria-label="Pilih metrik" className="flex w-11.5 shrink-0 flex-col gap-0.5">
         {metrics.map((m) => {
           const active = m.key === metric.key;
 
@@ -224,8 +215,8 @@ export default function SystemView({ stats }: { stats: SystemStats | null }) {
               role="tab"
               aria-selected={active}
               onClick={(event) => select(event, m.key)}
-              className={`flex h-[18px] w-full cursor-pointer items-center gap-1 rounded-md px-1.5 text-[10px] font-medium leading-none transition-colors duration-150 ${
-                active ? "bg-[#f6e7cb]/20 text-[#f6e7cb] ring-1 ring-[#f6e7cb]/30" : "text-[#f6e7cb]/50 hover:bg-[#f6e7cb]/10 hover:text-[#f6e7cb]/80"
+              className={`flex h-4.5 w-full cursor-pointer items-center gap-1 rounded-md px-1.5 text-micro font-medium leading-none transition-colors duration-150 ${
+                active ? "bg-cream/20 text-cream ring-1 ring-cream/30" : "text-cream/50 hover:bg-cream/10 hover:text-cream/80"
               }`}
             >
               <span className="h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-300" style={{ backgroundColor: LEVEL_COLOR[m.level], opacity: m.level === "ok" ? 0.35 : 1 }} />

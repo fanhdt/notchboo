@@ -27,7 +27,7 @@ export default function ShelfFiles({ query, pinnedOnly, importer, reloadToken }:
             type="button"
             onClick={() => void importer.pick()}
             disabled={importer.importing}
-            className="flex items-center gap-1.5 rounded-lg bg-[#c8e63c] px-3 py-1.5 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             <Icon name="add" className="h-3.5 w-3.5" />
             Tambah file

@@ -69,7 +69,7 @@ export default function IslandShelf({ active, version, dragging, importer }: Pro
 
   if (dragging) {
     return (
-      <div className="flex h-full max-h-30 w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-[#c8e63c]/70 text-[#c8e63c]">
+      <div className="flex h-full max-h-30 w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-accent/70 text-accent">
         <Icon name="upload" className="h-6 w-6" />
         <span className="text-xs font-medium">Lepas untuk menyimpan ke File</span>
       </div>
@@ -87,7 +87,7 @@ export default function IslandShelf({ active, version, dragging, importer }: Pro
               {progress.index}/{progress.count}
             </span>
             <div className="h-1 w-full overflow-hidden rounded-full bg-white/20">
-              <div className="h-full rounded-full bg-[#c8e63c] transition-[width] duration-200" style={{ width: `${((progress.index - 1) / progress.count) * 100}%` }} />
+              <div className="h-full rounded-full bg-accent transition-[width] duration-200" style={{ width: `${((progress.index - 1) / progress.count) * 100}%` }} />
             </div>
           </>
         )}
@@ -102,7 +102,7 @@ export default function IslandShelf({ active, version, dragging, importer }: Pro
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col">
           <span className="text-[13px] font-semibold leading-tight">Quick Shelf</span>
-          <span className="truncate text-[10px] leading-tight text-white/50">{subtitle}</span>
+          <span className="truncate text-micro leading-tight text-white/50">{subtitle}</span>
         </div>
 
         <button
@@ -111,14 +111,14 @@ export default function IslandShelf({ active, version, dragging, importer }: Pro
             event.stopPropagation();
             shelf.openWindow().catch((reason) => setNotice(messageOf(reason)));
           }}
-          className="shrink-0 rounded-full bg-[#c8e63c] px-3 py-1 text-[11px] font-semibold text-black transition-opacity hover:opacity-90 active:opacity-75"
+          className="shrink-0 rounded-full bg-accent px-3 py-1 text-caption font-semibold text-black transition-opacity hover:opacity-90 active:opacity-75"
         >
           Buka
         </button>
       </div>
 
       {items.length === 0 ? (
-        <p className="py-3 text-center text-[11px] text-white/45">{loading ? "Memuat…" : "Seret file ke sini untuk menyimpannya"}</p>
+        <p className="py-3 text-center text-caption text-white/45">{loading ? "Memuat…" : "Seret file ke sini untuk menyimpannya"}</p>
       ) : (
         <ul className="flex flex-col gap-0.5">
           {items.map((item) => (
@@ -132,11 +132,11 @@ export default function IslandShelf({ active, version, dragging, importer }: Pro
                 title={item.kind === "snippet" ? "Salin snippet" : item.kind === "file" ? "Buka file" : "Buka di Quick Shelf"}
                 className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 text-left transition-colors hover:bg-white/10 active:bg-white/15"
               >
-                <span className={item.pinned ? "text-[#c8e63c]" : "text-white/50"}>
+                <span className={item.pinned ? "text-accent" : "text-white/50"}>
                   <Icon name={item.pinned ? "pin" : KIND_ICON[item.kind]} className="h-3.5 w-3.5" />
                 </span>
                 <span className="min-w-0 flex-1 truncate text-xs">{item.fileName ?? item.title}</span>
-                <span className="shrink-0 text-[10px] text-white/40">{rowMeta(item)}</span>
+                <span className="shrink-0 text-micro text-white/40">{rowMeta(item)}</span>
               </button>
 
               {item.kind === "file" && (

@@ -14,7 +14,7 @@ export default function ShelfLauncher() {
     <div className="flex w-full items-center justify-between gap-3">
       <div className="flex min-w-0 flex-col gap-0.5">
         <span className="text-[13px] font-semibold">Quick Shelf</span>
-        <span className="truncate text-[11px] text-white/60">{error ?? "File, catatan, dan snippet sementara"}</span>
+        <span className="truncate text-caption text-white/60">{error ?? "File, catatan, dan snippet sementara"}</span>
       </div>
 
       <button
@@ -23,7 +23,7 @@ export default function ShelfLauncher() {
           event.stopPropagation();
           openShelf();
         }}
-        className="shrink-0 rounded-full bg-[#c8e63c] px-3 py-1.5 text-[11px] font-semibold text-black transition-opacity hover:opacity-90 active:opacity-75"
+        className="shrink-0 rounded-full bg-accent px-3 py-1.5 text-caption font-semibold text-black transition-opacity hover:opacity-90 active:opacity-75"
       >
         Buka
       </button>

@@ -73,7 +73,7 @@ export default function PomodoroView({ mode, modeLocked, phase, remainingMs, run
       <div className="flex items-center justify-between gap-2">
         <ModeSwitch mode={mode} locked={modeLocked} onChange={onModeChange} />
 
-        <span className={`min-w-0 truncate text-[10px] font-medium ${alerting ? "animate-pulse text-[#c8e63c]" : longSession ? "" : "text-white/60"}`} style={longSession && !alerting ? { color: SOFT_WARNING } : undefined}>
+        <span className={`min-w-0 truncate text-micro font-medium ${alerting ? "motion-safe:animate-pulse text-accent" : longSession ? "" : "text-white/60"}`} style={longSession && !alerting ? { color: SOFT_WARNING } : undefined}>
           {status}
         </span>
       </div>
@@ -101,7 +101,7 @@ export default function PomodoroView({ mode, modeLocked, phase, remainingMs, run
       <div className="flex h-4 items-center gap-2">
         {flowFocus ? (
           <div className="flex w-full items-center justify-between gap-2">
-            <span className="min-w-0 truncate text-[10px] text-white/50">{hint}</span>
+            <span className="min-w-0 truncate text-micro text-white/50">{hint}</span>
             <RatioChip ratio={flowRatio} onChange={onRatioChange} />
           </div>
         ) : (
@@ -117,7 +117,7 @@ export default function PomodoroView({ mode, modeLocked, phase, remainingMs, run
                   event.stopPropagation();
                   drink?.onDrink();
                 }}
-                className="shrink-0 cursor-pointer rounded-full bg-sky-300/90 px-2 py-0.5 text-[10px] font-semibold leading-none text-black transition-opacity hover:opacity-90"
+                className="shrink-0 cursor-pointer rounded-full bg-sky-300/90 px-2 py-0.5 text-micro font-semibold leading-none text-black transition-opacity hover:opacity-90"
               >
                 Minum +{drink?.glassMl} ml
               </button>
@@ -148,7 +148,7 @@ function ModeSwitch({ mode, locked, onChange }: { mode: TimerMode; locked: boole
               event.stopPropagation();
               if (!locked) onChange(m);
             }}
-            className={`rounded-full px-2 py-0.5 text-[10px] font-medium leading-none transition-colors ${active ? "bg-white/25 text-white" : "text-white/55"} ${locked ? "cursor-not-allowed" : "cursor-pointer hover:text-white"}`}
+            className={`rounded-full px-2 py-0.5 text-micro font-medium leading-none transition-colors ${active ? "bg-white/25 text-white" : "text-white/55"} ${locked ? "cursor-not-allowed" : "cursor-pointer hover:text-white"}`}
           >
             {MODE_LABEL[m]}
           </button>
@@ -169,7 +169,7 @@ function RatioChip({ ratio, onChange }: { ratio: FlowRatio; onChange: (ratio: Fl
       type="button"
       onClick={cycle}
       aria-label={`Rasio istirahat 1/${ratio}. Ketuk untuk ganti`}
-      className="shrink-0 cursor-pointer rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-medium leading-none text-white/80 transition-colors hover:bg-white/20"
+      className="shrink-0 cursor-pointer rounded-full bg-white/10 px-2 py-0.5 text-micro font-medium leading-none text-white/80 transition-colors hover:bg-white/20"
     >
       Rasio 1/{ratio}
     </button>

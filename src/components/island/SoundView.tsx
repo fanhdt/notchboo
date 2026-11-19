@@ -32,10 +32,10 @@ export default function SoundView({ sound }: { sound: SoundSettingsApi }) {
           aria-checked={settings.repeat}
           onClick={press(() => sound.setRepeat(!settings.repeat))}
           title="Bunyikan ulang sampai alarm dijawab"
-          className="flex items-center gap-1.5 text-[10px] text-white/60 transition-colors hover:text-white"
+          className="flex items-center gap-1.5 text-micro text-white/60 transition-colors hover:text-white"
         >
           Ulangi
-          <span className={`flex h-3.5 w-6 items-center rounded-full p-0.5 transition-colors ${settings.repeat ? "bg-[#c8e63c]" : "bg-white/20"}`}>
+          <span className={`flex h-3.5 w-6 items-center rounded-full p-0.5 transition-colors ${settings.repeat ? "bg-accent" : "bg-white/20"}`}>
             <span className={`h-2.5 w-2.5 rounded-full bg-black transition-transform ${settings.repeat ? "translate-x-2.5" : "translate-x-0 bg-white/80"}`} />
           </span>
         </button>
@@ -76,9 +76,9 @@ export default function SoundView({ sound }: { sound: SoundSettingsApi }) {
           onChange={(event) => sound.setVolume(Number(event.target.value) / 100)}
           onPointerUp={() => sound.play("pomodoro")}
           aria-label="Volume alarm"
-          className="h-1 min-w-0 flex-1 accent-[#c8e63c]"
+          className="h-1 min-w-0 flex-1 accent-accent"
         />
-        <span className="w-8 shrink-0 text-right text-[10px] tabular-nums text-white/50">{Math.round(settings.volume * 100)}%</span>
+        <span className="w-8 shrink-0 text-right text-micro tabular-nums text-white/50">{Math.round(settings.volume * 100)}%</span>
       </div>
     </div>
   );

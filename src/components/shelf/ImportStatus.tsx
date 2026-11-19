@@ -21,7 +21,7 @@ export default function ImportStatus({ importer }: { importer: UseShelfImport })
             )}
           </div>
           <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/10">
-            <div className="h-full rounded-full bg-[#c8e63c] transition-[width] duration-200" style={{ width: progress ? `${((progress.index - 1) / progress.count) * 100}%` : "0%" }} />
+            <div className="h-full rounded-full bg-accent transition-[width] duration-200" style={{ width: progress ? `${((progress.index - 1) / progress.count) * 100}%` : "0%" }} />
           </div>
         </div>
       )}

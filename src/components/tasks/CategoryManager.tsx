@@ -34,7 +34,7 @@ export default function CategoryManager({ categories, tasks, onAdd, onRemove }: 
             <li key={category.id} className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/3 px-3 py-2.5">
               <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: category.color }} />
               <span className="min-w-0 flex-1 truncate text-sm text-white">{category.name}</span>
-              <span className="shrink-0 text-[11px] text-white/40">{count} tugas</span>
+              <span className="shrink-0 text-caption text-white/40">{count} tugas</span>
               <DeleteButton onConfirm={() => onRemove(category.id)} />
             </li>
           );
@@ -49,7 +49,7 @@ export default function CategoryManager({ categories, tasks, onAdd, onRemove }: 
           placeholder="Mis. Kuliah, Olahraga"
           maxLength={30}
           aria-label="Nama kategori"
-          className="h-9 rounded-lg border border-white/10 bg-white/5 px-2.5 text-sm text-white placeholder:text-white/35 focus:border-[#c8e63c]/50 focus:outline-none"
+          className="h-9 rounded-lg border border-white/10 bg-white/5 px-2.5 text-sm text-white placeholder:text-white/35  focus:border-accent/50 focus:outline-none"
         />
 
         <div className="flex items-center justify-between gap-2">
@@ -62,13 +62,13 @@ export default function CategoryManager({ categories, tasks, onAdd, onRemove }: 
                 aria-checked={color === item}
                 aria-label={item}
                 onClick={() => setColor(item)}
-                className={`h-6 w-6 rounded-full transition-transform ${color === item ? "scale-110 ring-2 ring-white/80 ring-offset-2 ring-offset-[#111113]" : "hover:scale-110"}`}
+                className={`h-6 w-6 rounded-full transition-transform ${color === item ? "scale-110 ring-2 ring-white/80 ring-offset-2 ring-offset-surface" : "hover:scale-110"}`}
                 style={{ backgroundColor: item }}
               />
             ))}
           </div>
 
-          <button type="submit" disabled={name.trim() === ""} className="rounded-lg bg-[#c8e63c] px-4 py-2 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-30">
+          <button type="submit" disabled={name.trim() === ""} className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-30">
             Tambah
           </button>
         </div>

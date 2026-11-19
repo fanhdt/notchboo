@@ -10,11 +10,7 @@ type Props = {
 };
 
 export default function IconButton({ label, icon, onClick, active, danger, disabled }: Props) {
-  const tone = active
-    ? "bg-[#c8e63c]/15 text-[#c8e63c]"
-    : danger
-      ? "text-white/50 hover:bg-red-500/15 hover:text-red-300"
-      : "text-white/50 hover:bg-white/10 hover:text-white";
+  const tone = active ? "bg-accent/15 text-accent" : danger ? "text-white/50 hover:bg-red-500/15 hover:text-red-300" : "text-white/50 hover:bg-white/10 hover:text-white";
 
   return (
     <button

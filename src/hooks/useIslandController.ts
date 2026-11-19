@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from "react";
 import { ISLAND_PAGES, type IslandView } from "../components/island/IslandNav";
 import { PHASE_MS, type PomodoroPhase } from "../components/island/PomodoroView";
 import type { PlaybackState } from "../components/island/ProgressBar";
-import type { SystemStats } from "../components/island/SystemView";
 import { useCountdown } from "./useCountdown";
 import { FLOW_RATIOS, TIMER_MODES, useFlowmodoro, usePersistedChoice, type FlowRatio, type TimerMode } from "./useFlowmodoro";
 import { useForegroundBusy } from "./useForegroundBusy";
@@ -50,7 +49,6 @@ export function useIslandController() {
   const [presence, setPresence] = useState<Presence>("away");
   const [media, setMedia] = useState<MediaInfo | null>(null);
   const [playback, setPlayback] = useState<PlaybackState | null>(null);
-  const [stats, setStats] = useState<SystemStats | null>(null);
   const [phase, setPhase] = useState<PomodoroPhase>("focus");
   const [alerting, setAlerting] = useState(false);
 
@@ -158,22 +156,10 @@ export function useIslandController() {
     };
   }, []);
 
-  // 4. Sampel sistem dari Rust.
-  useEffect(() => {
-    const unlisten = listen<SystemStats>("system-stats", (event) => setStats(event.payload));
-    return () => {
-      unlisten.then((stop) => stop());
-    };
-  }, []);
+  // Sampel sistem dan saklar monitoring diurus `useSystemStats`, di dalam halaman Sistem sendiri,
+  // supaya sampel tiap detik tidak me-render ulang seluruh island.
 
-  // 5. Monitoring hanya menyala saat halaman Sistem terlihat.
-  useEffect(() => {
-    const enabled = state === "expanded" && view === "system";
-    invoke("set_monitoring", { enabled }).catch(console.error);
-    if (!enabled) setStats(null);
-  }, [state, view]);
-
-  // 6. Island yang menutup selalu kembali ke halaman pertama.
+  // 4. Island yang menutup selalu kembali ke halaman pertama.
   useEffect(() => {
     if (state === "compact") {
       setPageIndex(0);
@@ -181,7 +167,7 @@ export function useIslandController() {
     }
   }, [state]);
 
-  // 7. Timer selesai: expand dan tampilkan halaman Pomodoro (suaranya diurus useIslandAlarms).
+  // 5. Timer selesai: expand dan tampilkan halaman Pomodoro (suaranya diurus useIslandAlarms).
   useEffect(() => {
     if (!alerting) return;
     setState("expanded");
@@ -189,12 +175,12 @@ export function useIslandController() {
     setPageIndex(ISLAND_PAGES.indexOf("pomodoro"));
   }, [alerting]);
 
-  // 8. Mode standby: island selalu terbuka.
+  // 6. Mode standby: island selalu terbuka.
   useEffect(() => {
     if (peekMode === "standby" && state !== "expanded") setState("expanded");
   }, [peekMode, state]);
 
-  // 9. File diseret ke island: buka, tampilkan halaman Shelf.
+  // 7. File diseret ke island: buka, tampilkan halaman Shelf.
   useEffect(() => {
     if (!draggingFile) return;
     setState("expanded");
@@ -282,7 +268,6 @@ export function useIslandController() {
     sendMediaAction,
     seekTo,
     // halaman lain
-    stats,
     phase,
     timer,
     timerPhase,

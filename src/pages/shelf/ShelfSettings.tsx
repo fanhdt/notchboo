@@ -9,11 +9,7 @@ export default function ShelfSettings() {
   if (loading) return <LoadingState />;
 
   if (!settings) {
-    return (
-      <div className="p-3">
-        {error ? <ErrorBanner message={error} /> : <EmptyState icon="settings" title="Pengaturan tidak tersedia" />}
-      </div>
-    );
+    return <div className="p-3">{error ? <ErrorBanner message={error} /> : <EmptyState icon="settings" title="Pengaturan tidak tersedia" />}</div>;
   }
 
   return (
@@ -34,18 +30,16 @@ export default function ShelfSettings() {
                 role="radio"
                 aria-checked={selected}
                 onClick={() => void setDefaultExpiry(option)}
-                className={`flex items-center justify-between rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${
-                  selected ? "border-[#c8e63c]/50 bg-[#c8e63c]/10 text-white" : "border-white/10 text-white/70 hover:bg-white/5"
-                }`}
+                className={`flex items-center justify-between rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${selected ? "border-accent/50 bg-accent/10 text-white" : "border-white/10 text-white/70 hover:bg-white/5"}`}
               >
                 {EXPIRY_LABEL[option]}
-                {selected && <Icon name="check" className="h-4 w-4 text-[#c8e63c]" />}
+                {selected && <Icon name="check" className="h-4 w-4 text-accent" />}
               </button>
             );
           })}
         </div>
 
-        <div className="mt-2 h-4 text-xs text-[#c8e63c]" role="status">
+        <div className="mt-2 h-4 text-xs text-accent" role="status">
           {saved ? "Tersimpan" : ""}
         </div>
         {error && <ErrorBanner message={error} />}

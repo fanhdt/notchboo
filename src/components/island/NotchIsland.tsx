@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
+import { memo } from "react";
 
 import type { IslandController } from "../../hooks/useIslandController";
 import { useIslandGeometry } from "../../hooks/useIslandGeometry";
@@ -11,6 +12,10 @@ import IslandShape from "./IslandShape";
 import MessageNotice from "./MessageNotice";
 import Mochi from "./Mochi";
 import { formatClock } from "./PomodoroView";
+
+// Mochi hanya bergantung pada `peeking`. Tanpa memo, ia ikut dirender ulang setiap island
+// dirender (mis. tiap detik saat timer berjalan) padahal tampilannya tidak berubah.
+const MemoMochi = memo(Mochi);
 
 // Animasi geser antar halaman.
 const PAGE_VARIANTS = {
@@ -61,7 +66,7 @@ export default function NotchIsland({ c }: { c: IslandController }) {
           ) : state === "compact" ? (
             /* COMPACT MODE */
             <div className="flex h-full w-full items-center justify-center gap-2">
-              <Mochi peeking={c.peeking} />
+              <MemoMochi peeking={c.peeking} />
 
               {timer.running && <span className="text-[11px] font-medium tabular-nums text-[#c8e63c]">{formatClock(timer.remainingMs)}</span>}
             </div>

@@ -56,11 +56,11 @@ export default function TextCard({ item, onEdit, onTogglePin, onSetExpiry, onDel
   return (
     <li className="rounded-xl border border-white/5 bg-white/3 p-3 transition-colors hover:border-white/10 hover:bg-white/5">
       <div className="flex items-start justify-between gap-2">
-        <button type="button" onClick={onEdit} className="min-w-0 flex-1 truncate text-left text-sm font-medium text-white hover:text-[#c8e63c]" title="Buka untuk mengedit">
+        <button type="button" onClick={onEdit} className="min-w-0 flex-1 truncate text-left text-sm font-medium text-white hover:text-accent" title="Buka untuk mengedit">
           {item.title}
         </button>
 
-        {item.language && <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 font-mono text-[10px] text-white/60">{item.language}</span>}
+        {item.language && <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 font-mono text-micro text-white/60">{item.language}</span>}
       </div>
 
       {preview &&
@@ -68,7 +68,7 @@ export default function TextCard({ item, onEdit, onTogglePin, onSetExpiry, onDel
           <div className="mt-1.5">
             <p className={`select-text whitespace-pre-wrap wrap-break-word text-xs leading-relaxed text-white/55 ${expanded ? "" : "line-clamp-3"} ${isSnippet ? "font-mono" : ""}`}>{shown}</p>
 
-            <button type="button" onClick={() => void toggleExpanded()} aria-expanded={expanded} title={expanded ? "Ciutkan" : "Tampilkan semua"} className="mt-1 text-left text-[11px] text-[#c8e63c]/80 hover:text-[#c8e63c]">
+            <button type="button" onClick={() => void toggleExpanded()} aria-expanded={expanded} title={expanded ? "Ciutkan" : "Tampilkan semua"} className="mt-1 text-left text-caption text-accent/80 hover:text-accent">
               {loadError ?? (expanded ? "Ciutkan" : "Tampilkan semua")}
             </button>
           </div>
@@ -76,7 +76,7 @@ export default function TextCard({ item, onEdit, onTogglePin, onSetExpiry, onDel
           <p className={`mt-1.5 select-text whitespace-pre-wrap wrap-break-word text-xs leading-relaxed text-white/55 ${isSnippet ? "font-mono" : ""}`}>{preview}</p>
         ))}
 
-      <p className="mt-2 text-[11px] text-white/35">Diperbarui {formatDate(item.updatedAt)}</p>
+      <p className="mt-2 text-caption text-white/35">Diperbarui {formatDate(item.updatedAt)}</p>
 
       <div className="mt-1 flex items-center justify-between gap-2">
         <ExpiryMenu item={item} onChange={onSetExpiry} />

@@ -1,5 +1,6 @@
 mod activity;
 mod autostart;
+mod cursor_geometry;
 mod island;
 mod lyrics;
 mod monitor;
@@ -58,7 +59,7 @@ pub fn run() {
                 main_window.set_ignore_cursor_events(true)?;
                 main_window.show()?;
 
-                activity::start_activity_watcher(app.handle(), main_window.clone());
+                // Satu thread untuk hover dan arah pandang Mochi (lihat island.rs).
                 island::start_cursor_watcher(app.handle(), main_window);
             }
             foreground::start_foreground_watcher(app.handle());

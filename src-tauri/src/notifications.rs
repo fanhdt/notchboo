@@ -7,7 +7,11 @@
 //! browser) yang diteruskan ke island, lewat event `message-notification`.
 //!
 //! Format database itu internal Windows, tidak didokumentasikan, dan bisa berubah antar versi.
-//! Kalau berubah, watcher berhenti dan mencatat pesannya; bagian lain aplikasi tidak terpengaruh.
+//! Kalau berubah (atau database sedang tidak bisa dibaca), watcher terus mencoba dengan jeda yang makin
+//! panjang dan mencatat pesannya sekali; bagian lain aplikasi tidak terpengaruh.
+//!
+//! Privasi: salinan database di folder sementara hanya ada selama satu kali pembacaan, lalu dihapus.
+//! Isi pesan tidak pernah dicatat ke log.
 //!
 //! Di platform selain Windows, watcher tidak melakukan apa pun.
 
@@ -59,6 +63,8 @@ mod windows_source {
     use super::{MessageNotice, MESSAGE_EVENT};
 
     const POLL_INTERVAL: Duration = Duration::from_millis(1500);
+    /// Setiap kegagalan beruntun menambah jeda sebesar satu `POLL_INTERVAL`, sampai batas ini (±60 detik).
+    const MAX_BACKOFF_STEPS: u32 = 40;
     const MAX_BODY_CHARS: usize = 200;
     const MAX_SENDER_CHARS: usize = 60;
     /// Aplikasi yang dikenali. Notifikasi aplikasi desktop dikenali dari nama aplikasinya; notifikasi
@@ -92,7 +98,7 @@ mod windows_source {
 
         thread::spawn(move || {
             if let Err(error) = run(&app) {
-                eprintln!("pembaca notifikasi berhenti: {error}");
+                eprintln!("pembaca notifikasi tidak dijalankan: {error}");
             }
         });
     }
@@ -132,54 +138,100 @@ mod windows_source {
         Ok(())
     }
 
+    /// Menghapus salinan database saat keluar dari lingkup, termasuk saat terjadi error atau panic.
+    /// Harus dideklarasikan sebelum `Connection` supaya koneksi ditutup lebih dulu (Windows tidak
+    /// mengizinkan berkas yang masih terbuka dihapus).
+    struct CopyGuard<'a>(&'a Path);
+
+    impl Drop for CopyGuard<'_> {
+        fn drop(&mut self) {
+            for name in DB_FILES {
+                let _ = fs::remove_file(self.0.join(name));
+            }
+            let _ = fs::remove_dir(self.0);
+        }
+    }
+
+    /// Hasil satu kali pembacaan database.
+    enum Snapshot {
+        /// Pembacaan pertama: hanya mengambil Id terbesar sebagai titik awal.
+        Baseline(i64),
+        New { notices: Vec<MessageNotice>, newest: i64 },
+    }
+
+    /// Menyalin database, membacanya, lalu menghapus salinannya. Salinan tidak dibiarkan di folder sementara.
+    fn read_snapshot(source: &Path, copy_dir: &Path, after: Option<i64>) -> Result<Snapshot, String> {
+        let _cleanup = CopyGuard(copy_dir);
+
+        copy_database(source, copy_dir).map_err(|error| format!("database notifikasi tidak bisa disalin: {error}"))?;
+        let connection = Connection::open(copy_dir.join(DB_FILES[0])).map_err(|error| format!("salinan database tidak bisa dibuka: {error}"))?;
+        let schema_error = |error: rusqlite::Error| format!("database notifikasi tidak bisa dibaca (skema berubah?): {error}");
+
+        match after {
+            None => {
+                let max: Option<i64> = connection.query_row("SELECT MAX(Id) FROM Notification", [], |row| row.get(0)).map_err(schema_error)?;
+                Ok(Snapshot::Baseline(max.unwrap_or(0)))
+            }
+            Some(after) => {
+                let (notices, newest) = read_new(&connection, after).map_err(schema_error)?;
+                Ok(Snapshot::New { notices, newest: newest.max(after) })
+            }
+        }
+    }
+
     fn run(app: &AppHandle) -> Result<(), String> {
         let source = source_dir().ok_or("LOCALAPPDATA tidak ditemukan")?;
-        if !source.join(DB_FILES[0]).exists() {
-            return Err(format!("database notifikasi tidak ada di {}", source.display()));
-        }
-
         let copy_dir = std::env::temp_dir().join("notchboo-notifications");
+
+        // Sisa salinan dari sesi sebelumnya (mis. aplikasi ditutup paksa) dibersihkan.
+        drop(CopyGuard(&copy_dir));
 
         // `None` = belum mengambil titik awal. Notifikasi yang sudah ada sebelum Notchboo menyala tidak ditampilkan.
         let mut last_id: Option<i64> = None;
         let mut last_seen: Option<Vec<Option<(SystemTime, u64)>>> = None;
+        // Kegagalan tidak pernah mematikan watcher: jeda dinaikkan bertahap, dan pesan yang sama dicatat sekali.
+        let mut failures: u32 = 0;
+        let mut last_error: Option<String> = None;
 
         loop {
-            thread::sleep(POLL_INTERVAL);
+            thread::sleep(POLL_INTERVAL + POLL_INTERVAL * failures.min(MAX_BACKOFF_STEPS));
 
             let current = fingerprint(&source);
             if last_seen.as_ref() == Some(&current) {
                 continue;
             }
 
-            // Salinan gagal (mis. sedang ditulis): coba lagi di putaran berikutnya.
-            if copy_database(&source, &copy_dir).is_err() {
-                continue;
-            }
-            let Ok(connection) = Connection::open(copy_dir.join(DB_FILES[0])) else {
-                continue;
-            };
+            match read_snapshot(&source, &copy_dir, last_id) {
+                Ok(snapshot) => {
+                    if failures > 0 {
+                        eprintln!("notifikasi: pembaca pulih setelah {failures} kegagalan");
+                        failures = 0;
+                        last_error = None;
+                    }
 
-            match last_id {
-                None => {
-                    let max: Option<i64> = connection
-                        .query_row("SELECT MAX(Id) FROM Notification", [], |row| row.get(0))
-                        .map_err(|error| format!("skema database tidak dikenali: {error}"))?;
-                    last_id = Some(max.unwrap_or(0));
-                    eprintln!("notifikasi: pembaca aktif, titik awal id {}", max.unwrap_or(0));
+                    match snapshot {
+                        Snapshot::Baseline(max) => {
+                            last_id = Some(max);
+                            eprintln!("notifikasi: pembaca aktif, titik awal id {max}");
+                        }
+                        Snapshot::New { notices, newest } => {
+                            last_id = Some(newest);
+                            for notice in notices {
+                                // Gagal mengirim satu event bukan masalah fatal.
+                                let _ = app.emit(MESSAGE_EVENT, notice);
+                            }
+                        }
+                    }
+                    last_seen = Some(current);
                 }
-                Some(after) => {
-                    let (notices, newest) = read_new(&connection, after).map_err(|error| format!("skema database tidak dikenali: {error}"))?;
-                    last_id = Some(newest.max(after));
-
-                    for notice in notices {
-                        // Gagal mengirim satu event bukan masalah fatal.
-                        let _ = app.emit(MESSAGE_EVENT, notice);
+                Err(error) => {
+                    failures = failures.saturating_add(1);
+                    if last_error.as_deref() != Some(error.as_str()) {
+                        eprintln!("notifikasi: {error} (akan dicoba lagi)");
+                        last_error = Some(error);
                     }
                 }
             }
-
-            last_seen = Some(current);
         }
     }
 
@@ -209,14 +261,17 @@ mod windows_source {
 
             // WhatsApp Web: toast-nya milik browser (Chrome, Edge, ...), tetapi mencantumkan asal situsnya.
             let source = find_source(&app_id, &xml);
-            eprintln!("notifikasi: id {id} dari \"{app_id}\" (dikenali: {})", source.map_or("tidak", |source| source.name));
+            // Nama aplikasi pengirim hanya dicatat pada build debug; isi toast tidak pernah dicatat.
+            if cfg!(debug_assertions) {
+                eprintln!("notifikasi: id {id} dari \"{app_id}\" (dikenali: {})", source.map_or("tidak", |source| source.name));
+            }
             let Some(source) = source else {
                 continue;
             };
 
             match parse_toast(&xml, source) {
                 Some(notice) => notices.push(notice),
-                None => eprintln!("notifikasi: id {id} cocok tetapi teksnya tidak terbaca, isi: {xml}"),
+                None => eprintln!("notifikasi: id {id} dari {} cocok tetapi teksnya tidak terbaca", source.name),
             }
         }
 
@@ -360,6 +415,71 @@ mod windows_source {
         #[test]
         fn decodes_numeric_entities_and_keeps_stray_ampersands() {
             assert_eq!(unescape("a &#65; &#x42; & c"), "a A B & c");
+        }
+
+        /// Database contoh dengan skema yang sama dengan wpndatabase.db (hanya kolom yang dibaca).
+        fn make_source_db(dir: &Path, rows: &[(i64, &str)]) {
+            fs::create_dir_all(dir).unwrap();
+            let connection = Connection::open(dir.join(DB_FILES[0])).unwrap();
+            connection
+                .execute_batch(
+                    "CREATE TABLE NotificationHandler (RecordId INTEGER PRIMARY KEY, PrimaryId TEXT);
+                     CREATE TABLE Notification (Id INTEGER PRIMARY KEY, HandlerId INTEGER, Payload BLOB);
+                     INSERT INTO NotificationHandler VALUES (1, 'WhatsAppDesktop');",
+                )
+                .unwrap();
+            for (id, xml) in rows {
+                connection.execute("INSERT INTO Notification VALUES (?1, 1, ?2)", params![id, xml.as_bytes()]).unwrap();
+            }
+        }
+
+        fn scratch_dir(tag: &str) -> PathBuf {
+            let nanos = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_nanos();
+            std::env::temp_dir().join(format!("notchboo-test-{tag}-{}-{nanos}", std::process::id()))
+        }
+
+        #[test]
+        fn snapshot_reads_new_rows_and_removes_the_copy() {
+            let root = scratch_dir("ok");
+            let (source, copy) = (root.join("src"), root.join("copy"));
+            let toast = "<toast><text>Budi</text><text>Halo</text></toast>";
+            make_source_db(&source, &[(1, toast), (2, toast)]);
+
+            // Pembacaan pertama: hanya titik awal.
+            assert!(matches!(read_snapshot(&source, &copy, None), Ok(Snapshot::Baseline(2))));
+            assert!(!copy.exists(), "salinan harus dihapus");
+
+            // Notifikasi baru setelah titik awal.
+            Connection::open(source.join(DB_FILES[0])).unwrap().execute("INSERT INTO Notification VALUES (3, 1, ?1)", params![toast.as_bytes()]).unwrap();
+            match read_snapshot(&source, &copy, Some(2)) {
+                Ok(Snapshot::New { notices, newest }) => {
+                    assert_eq!(newest, 3);
+                    assert_eq!(notices.len(), 1);
+                    assert_eq!(notices[0].sender, "Budi");
+                }
+                _ => panic!("harus membaca satu notifikasi baru"),
+            }
+            assert!(!copy.exists(), "salinan harus dihapus");
+
+            let _ = fs::remove_dir_all(&root);
+        }
+
+        #[test]
+        fn snapshot_failures_are_errors_not_panics_and_leave_no_copy() {
+            let root = scratch_dir("err");
+            let (source, copy) = (root.join("src"), root.join("copy"));
+
+            // Database tidak ada.
+            assert!(read_snapshot(&source, &copy, None).is_err());
+            assert!(!copy.exists());
+
+            // Skema tidak dikenali.
+            fs::create_dir_all(&source).unwrap();
+            Connection::open(source.join(DB_FILES[0])).unwrap().execute_batch("CREATE TABLE Other (x INTEGER);").unwrap();
+            assert!(read_snapshot(&source, &copy, None).is_err());
+            assert!(!copy.exists());
+
+            let _ = fs::remove_dir_all(&root);
         }
 
         #[test]

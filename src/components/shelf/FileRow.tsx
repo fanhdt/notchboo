@@ -24,10 +24,10 @@ export default function FileRow({ item, onOpen, onReveal, onTogglePin, onSetExpi
         </div>
 
         <div className="min-w-0 flex-1">
-          <button type="button" onClick={onOpen} title={item.sourcePath ? `Asal: ${item.sourcePath}` : name} className="block w-full truncate text-left text-sm font-medium text-white hover:text-[#c8e63c]">
+          <button type="button" onClick={onOpen} title={item.sourcePath ? `Asal: ${item.sourcePath}` : name} className="block w-full truncate text-left text-sm font-medium text-white hover:text-accent">
             {name}
           </button>
-          <p className="mt-0.5 truncate text-[11px] text-white/45">{meta.join(" · ")}</p>
+          <p className="mt-0.5 truncate text-caption text-white/45">{meta.join(" · ")}</p>
         </div>
       </div>
 

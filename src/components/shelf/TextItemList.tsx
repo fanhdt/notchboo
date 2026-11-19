@@ -5,6 +5,7 @@ import type { ItemKind, ShelfItem } from "../../lib/shelf";
 import { EmptyState, ErrorBanner, LoadingState, Toast } from "./Feedback";
 import TextCard from "./TextCard";
 import TextEditor from "./TextEditor";
+import Icon from "./Icon";
 
 type TextKind = Exclude<ItemKind, "file">;
 
@@ -46,6 +47,12 @@ export default function TextItemList({ kind, query, pinnedOnly }: Props) {
     if (full) setEditor({ item: full });
   }
 
+  function startCreate() {
+    list.dismissActionError();
+    actions.clearFeedback();
+    setEditor({ item: null });
+  }
+
   function closeEditor() {
     list.dismissActionError();
     setEditor(null);
@@ -54,13 +61,20 @@ export default function TextItemList({ kind, query, pinnedOnly }: Props) {
   return (
     <>
       <div className="flex h-full flex-col">
-        <div className="flex items-center gap-2 px-3">
+        <div className="flex items-center justify-between gap-2 px-3 py-2">
           <span className="text-xs text-white/40">{list.loading ? "Memuat…" : `${list.items.length} item`}</span>
+
+          <button type="button" onClick={startCreate} className="flex h-8 items-center gap-1.5 rounded-lg bg-[#c8e63c] px-3 text-xs font-semibold text-black transition-colors hover:bg-[#d6f05a] active:scale-[0.97]">
+            <Icon name="add" className="h-3.5 w-3.5" />
+            {copy.add}
+          </button>
         </div>
 
         <div className="flex flex-col gap-2 px-3 pt-1">
           {list.error && <ErrorBanner message={list.error} onRetry={() => void list.refresh()} />}
+
           {!editor && list.actionError && <ErrorBanner message={list.actionError} onDismiss={list.dismissActionError} />}
+
           {actions.error && <ErrorBanner message={actions.error} onDismiss={actions.clearFeedback} />}
         </div>
 

@@ -82,7 +82,7 @@ export default function IslandPages({ c }: { c: IslandController }) {
     case "media":
       return <MediaPage c={c} />;
     case "system":
-      return <SystemView stats={c.stats} />;
+      return <SystemView />;
     case "pomodoro":
       return (
         <PomodoroView

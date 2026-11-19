@@ -2,60 +2,34 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { AnimatePresence, motion } from "motion/react";
 
 import type { LyricLine } from "../../hooks/useLyrics";
+import { computeTick, lyricPosition, nextTickDelay, type Tick } from "../../lib/lyricTiming";
 import type { PlaybackState } from "./ProgressBar";
 
 // Posisi baris aktif dari tepi atas area lirik (px).
 const ANCHOR = 20;
-// Pengisian warna selesai sedikit sebelum baris berikutnya mulai, dan dibatasi untuk jeda instrumental yang panjang.
-const FILL_RATIO = 0.85;
-const MAX_FILL_SPAN_MS = 6000;
-
-function currentPosition(playback: PlaybackState | null): number {
-  if (!playback) return 0;
-  const elapsed = playback.isPlaying ? performance.now() - playback.receivedAt : 0;
-  return playback.positionMs + elapsed;
-}
-
-type Tick = { index: number; progress: number };
-
-// Menghitung baris aktif dan progres isi warnanya dari posisi playback saat ini.
-function computeTick(lines: LyricLine[], playback: PlaybackState | null): Tick {
-  if (lines.length === 0) return { index: -1, progress: 0 };
-
-  const position = currentPosition(playback);
-
-  let found = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].timeMs <= position) found = i;
-    else break;
-  }
-
-  let progress = 0;
-  if (found >= 0) {
-    const start = lines[found].timeMs;
-    const next = lines[found + 1]?.timeMs ?? start + 4000;
-    const span = Math.min(next - start, MAX_FILL_SPAN_MS) * FILL_RATIO;
-    progress = Math.min(1, Math.max(0, (position - start) / Math.max(span, 1)));
-  }
-
-  return { index: found, progress };
-}
 
 function useLyricTick(lines: LyricLine[], playback: PlaybackState | null) {
   // State awal langsung dihitung, jadi saat mount ulang (hover lagi) tidak mulai dari -1.
   const [tick, setTick] = useState<Tick>(() => computeTick(lines, playback));
 
+  // Pembaruan dijadwalkan hanya saat memang ada yang berubah: tiap beberapa puluh ms selama warna
+  // sebuah baris terisi, lalu langsung ke awal baris berikutnya. Tidak ada tick selama jeda.
   useEffect(() => {
-    const update = () => {
+    let id = 0;
+
+    const step = () => {
       const next = computeTick(lines, playback);
       setTick((prev) => (prev.index === next.index && Math.abs(prev.progress - next.progress) < 0.01 ? prev : next));
+
+      if (!playback?.isPlaying) return;
+
+      const delay = nextTickDelay(lines, next, lyricPosition(playback));
+      if (delay !== null) id = window.setTimeout(step, delay);
     };
 
-    update();
-    if (!playback?.isPlaying) return;
+    step();
 
-    const id = setInterval(update, 60);
-    return () => clearInterval(id);
+    return () => window.clearTimeout(id);
   }, [lines, playback]);
 
   return tick;

@@ -69,10 +69,10 @@ export default function MessageNotice({ notice }: { notice: Notice }) {
   return (
     <div className="relative flex h-full w-full items-center gap-3.5 overflow-hidden px-5 py-2">
       {/* MOCHI CHARACTER */}
-      <div className="relative flex h-[100px] w-[100px] shrink-0 items-center justify-center">
+      <div className="relative flex h-25 w-25 shrink-0 items-center justify-center">
         {/* Soft glow */}
         <motion.div
-          className="absolute inset-1 rounded-full bg-[#f6e7cb]/10 blur-2xl"
+          className="absolute inset-1 rounded-full bg-cream/10 blur-2xl"
           initial={{
             opacity: 0,
             scale: 0.5,
@@ -92,7 +92,7 @@ export default function MessageNotice({ notice }: { notice: Notice }) {
 
         {/* Happy bouncing Mochi */}
         <motion.div
-          className="relative z-10 h-[94px] w-[94px]"
+          className="relative z-10 h-23.5 w-23.5"
           style={{
             transformOrigin: "50% 90%",
           }}
@@ -174,7 +174,7 @@ export default function MessageNotice({ notice }: { notice: Notice }) {
           />
 
           <span
-            className="truncate text-[10px] font-bold uppercase tracking-[0.13em]"
+            className="truncate text-micro font-bold uppercase tracking-[0.13em]"
             style={{
               color: source.color,
             }}
@@ -182,21 +182,21 @@ export default function MessageNotice({ notice }: { notice: Notice }) {
             {source.label}
           </span>
 
-          <span className="text-[10px] text-white/30">•</span>
+          <span className="text-micro text-white/30">•</span>
 
-          <span className="text-[10px] font-medium text-white/35">New message</span>
+          <span className="text-micro font-medium text-white/35">New message</span>
         </div>
 
         {/* Sender */}
         <span className="truncate text-[13px] font-bold leading-tight tracking-wide text-white">{notice.sender}</span>
 
         {/* Message body */}
-        <span className="line-clamp-2 break-words text-[11px] leading-[1.45] text-white/65">{notice.body}</span>
+        <span className="line-clamp-2 wrap-break text-caption leading-[1.45] text-white/65">{notice.body}</span>
       </motion.div>
 
       {/* PROGRESS BAR */}
       <motion.div
-        className="absolute bottom-0 left-5 right-5 h-[2px] overflow-hidden rounded-full bg-white/[0.08]"
+        className="absolute bottom-0 left-5 right-5 h-0.5 overflow-hidden rounded-full bg-white/8"
         initial={{
           opacity: 0,
         }}

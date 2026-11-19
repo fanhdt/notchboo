@@ -19,7 +19,7 @@ export function LoadingState() {
   return (
     <div className="flex flex-col gap-2 p-3" role="status" aria-label="Memuat">
       {[0, 1, 2].map((row) => (
-        <div key={row} className="h-14 animate-pulse rounded-xl bg-white/5" />
+        <div key={row} className="h-14 motion-safe:animate-pulse rounded-xl bg-white/5" />
       ))}
     </div>
   );
@@ -47,10 +47,7 @@ export function ErrorBanner({ message, onRetry, onDismiss }: { message: string; 
 export function Toast({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <div
-      role="status"
-      className="pointer-events-none absolute bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-[#c8e63c] px-3 py-1.5 text-xs font-medium text-black shadow-lg"
-    >
+    <div role="status" className="pointer-events-none absolute bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-black shadow-lg">
       <Icon name="check" className="h-3.5 w-3.5" />
       {message}
     </div>

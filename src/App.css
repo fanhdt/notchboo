@@ -1,5 +1,37 @@
 @import "tailwindcss";
 
+/*
+ * Token desain Notchboo.
+ *
+ * Nilainya diambil dari yang sudah dipakai di kode (bukan nilai baru), supaya pemakaiannya nanti
+ * tidak mengubah tampilan. Tailwind hanya menghasilkan CSS untuk token yang dipakai.
+ *   Warna    -> bg-accent, text-cream, border-accent/50, ...
+ *   Tipografi -> text-micro, text-caption
+ *   Radius   -> rounded-control, rounded-card, rounded-panel (pil/lingkaran tetap rounded-full)
+ *
+ * Mochi memakai warna krim yang sama lewat konstanta MOCHI_CREAM di Mochi.tsx (tidak diubah).
+ */
+@theme {
+  /* Warna merek */
+  --color-accent: #c8e63c; /* hijau-limau Notchboo: aksi utama, status aktif */
+  --color-cream: #f6e7cb; /* krim Mochi: teks dan ring di halaman Sistem */
+  --color-blush: #f2a7a0; /* peringatan lembut: tertinggal, sesi panjang */
+  --color-hot: #ef7b6c; /* peringatan keras: beban penuh */
+
+  /* Permukaan gelap (window shelf dan tasks) */
+  --color-surface: #111113;
+  --color-surface-raised: #1c1c20; /* menu, dialog, select */
+
+  /* Tipografi: ukuran yang sudah ada sebagai text-[10px] dan text-[11px]. xs, sm, base bawaan Tailwind tetap dipakai. */
+  --text-micro: 10px;
+  --text-caption: 11px;
+
+  /* Radius: sama dengan rounded-md, rounded-lg, rounded-xl */
+  --radius-control: 0.375rem;
+  --radius-card: 0.5rem;
+  --radius-panel: 0.75rem;
+}
+
 html,
 body,
 #root {

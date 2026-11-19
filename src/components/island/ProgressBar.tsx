@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 
 export type PlaybackState = {
   isPlaying: boolean;
@@ -32,33 +32,56 @@ function formatTime(ms: number): string {
 
 export default function ProgressBar({ playback, onSeek, compact = false }: Props) {
   const trackRef = useRef<HTMLDivElement>(null);
+  const fillRef = useRef<HTMLDivElement>(null);
+  const knobRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<number | null>(null);
 
-  const [position, setPosition] = useState(() => currentPosition(playback));
-  const [dragMs, setDragMs] = useState<number | null>(null);
+  // State React hanya untuk hal yang tampil di teks (berganti sekali per detik) dan gaya saat digeser.
+  // Lebar bar dan posisi knob ditulis langsung ke DOM tiap frame, tanpa render ulang.
+  const [shownSecond, setShownSecond] = useState(() => Math.floor(currentPosition(playback) / 1000));
+  const [dragging, setDragging] = useState(false);
   const [showRemaining, setShowRemaining] = useState(false);
+  const lastSecond = useRef(shownSecond);
 
-  // Ikuti posisi lagu saat tidak sedang digeser.
-  useEffect(() => {
-    if (dragMs !== null) return;
+  const durationMs = playback.durationMs;
 
-    setPosition(currentPosition(playback));
+  /** Menampilkan posisi `ms`: bar dan knob langsung ke DOM, label hanya jika detiknya berganti. */
+  const paint = useCallback(
+    (ms: number) => {
+      const percent = durationMs > 0 ? Math.min(100, Math.max(0, (ms / durationMs) * 100)) : 0;
+      if (fillRef.current) fillRef.current.style.width = `${percent}%`;
+      if (knobRef.current) knobRef.current.style.left = `${percent}%`;
+
+      const second = Math.floor(ms / 1000);
+      if (second !== lastSecond.current) {
+        lastSecond.current = second;
+        setShownSecond(second);
+      }
+    },
+    [durationMs],
+  );
+
+  // Ikuti posisi lagu saat tidak sedang digeser. Loop hanya berjalan selama lagu diputar.
+  useLayoutEffect(() => {
+    if (dragging) return;
+
+    paint(currentPosition(playback));
     if (!playback.isPlaying) return;
 
     let frame = 0;
     const loop = () => {
-      setPosition(currentPosition(playback));
+      paint(currentPosition(playback));
       frame = requestAnimationFrame(loop);
     };
     frame = requestAnimationFrame(loop);
 
     return () => cancelAnimationFrame(frame);
-  }, [playback, dragMs]);
+  }, [playback, dragging, paint]);
 
   function msFromPointer(clientX: number): number {
     const rect = trackRef.current!.getBoundingClientRect();
     const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    return ratio * playback.durationMs;
+    return ratio * durationMs;
   }
 
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
@@ -66,14 +89,15 @@ export default function ProgressBar({ playback, onSeek, compact = false }: Props
     e.currentTarget.setPointerCapture(e.pointerId);
     const ms = msFromPointer(e.clientX);
     dragRef.current = ms;
-    setDragMs(ms);
+    setDragging(true);
+    paint(ms);
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
     if (dragRef.current === null) return;
     const ms = msFromPointer(e.clientX);
     dragRef.current = ms;
-    setDragMs(ms);
+    paint(ms);
   }
 
   function handlePointerUp(e: React.PointerEvent<HTMLDivElement>) {
@@ -82,34 +106,35 @@ export default function ProgressBar({ playback, onSeek, compact = false }: Props
 
     onSeek(dragRef.current);
     dragRef.current = null;
-    setDragMs(null);
+    setDragging(false);
   }
 
-  const shown = dragMs ?? position;
-  const percent = playback.durationMs > 0 ? (shown / playback.durationMs) * 100 : 0;
-  const remaining = Math.max(0, playback.durationMs - shown);
+  const shownMs = shownSecond * 1000;
+  // Sisa waktu dihitung dari akhir detik yang sedang tampil, sama dengan pembulatan ke bawah sebelumnya.
+  const remaining = Math.max(0, durationMs - (shownMs + 999));
 
   return (
     // stopPropagation supaya klik di area ini tidak menutup island
     <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
       {/* Waktu berjalan */}
-      {!compact && <span className="w-9 shrink-0 text-right text-[11px] font-medium tabular-nums text-white/70">{formatTime(shown)}</span>}
+      {!compact && <span className="w-9 shrink-0 text-right text-[11px] font-medium tabular-nums text-white/70">{formatTime(shownMs)}</span>}
 
       {/* Area sentuh lebih tinggi dari bar-nya supaya mudah diklik */}
       <div
         ref={trackRef}
-        title={compact ? `${formatTime(shown)} / ${formatTime(playback.durationMs)}` : undefined}
+        title={compact ? `${formatTime(shownMs)} / ${formatTime(durationMs)}` : undefined}
         className={`group relative flex flex-1 cursor-pointer touch-none items-center ${compact ? "h-3" : "h-4"}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
       >
-        <div className={`relative w-full rounded-full bg-white/20 ${compact ? "h-[3px]" : "h-1"}`}>
-          <div className={`absolute inset-y-0 left-0 rounded-full transition-colors ${dragMs !== null ? "bg-white" : "bg-white/90 group-hover:bg-white"}`} style={{ width: `${percent}%` }} />
+        <div className={`relative w-full rounded-full bg-white/20 ${compact ? "h-0.75" : "h-1"}`}>
+          {/* Lebar dan posisi knob diatur oleh `paint`, bukan oleh render React. */}
+          <div ref={fillRef} className={`absolute inset-y-0 left-0 rounded-full transition-colors ${dragging ? "bg-white" : "bg-white/90 group-hover:bg-white"}`} />
           <div
-            className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow transition-opacity ${compact ? "h-2.5 w-2.5" : "h-3 w-3"} ${dragMs !== null ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-            style={{ left: `${percent}%` }}
+            ref={knobRef}
+            className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow transition-opacity ${compact ? "h-2.5 w-2.5" : "h-3 w-3"} ${dragging ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
           />
         </div>
       </div>
@@ -122,7 +147,7 @@ export default function ProgressBar({ playback, onSeek, compact = false }: Props
           onClick={() => setShowRemaining((v) => !v)}
           className="w-10 shrink-0 cursor-pointer text-left text-[11px] font-medium tabular-nums text-white/70 hover:text-white"
         >
-          {showRemaining ? `-${formatTime(remaining)}` : formatTime(playback.durationMs)}
+          {showRemaining ? `-${formatTime(remaining)}` : formatTime(durationMs)}
         </button>
       )}
     </div>

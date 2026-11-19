@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { msUntilCountdownChange } from "../lib/clock";
+
 export function useCountdown(durationMs: number, onFinish: () => void) {
   const [remainingMs, setRemainingMs] = useState(durationMs);
   const [running, setRunning] = useState(false);
   const endAt = useRef(0);
 
-  // Selalu panggil onFinish versi terbaru tanpa memulai ulang interval.
+  // Selalu panggil onFinish versi terbaru tanpa memulai ulang timer.
   const onFinishRef = useRef(onFinish);
   onFinishRef.current = onFinish;
 
@@ -15,22 +17,29 @@ export function useCountdown(durationMs: number, onFinish: () => void) {
     setRemainingMs(durationMs);
   }, [durationMs]);
 
+  // Tampilan berresolusi detik, jadi state hanya diperbarui saat detik yang ditampilkan berganti.
+  // Sisa waktu selalu dihitung dari `endAt` (waktu absolut), sehingga tidak ada drift.
   useEffect(() => {
     if (!running) return;
 
-    const id = setInterval(() => {
+    let id = 0;
+
+    const tick = () => {
       const left = endAt.current - Date.now();
       if (left <= 0) {
-        clearInterval(id);
         setRunning(false);
         setRemainingMs(0);
         onFinishRef.current();
-      } else {
-        setRemainingMs(left);
+        return;
       }
-    }, 200);
 
-    return () => clearInterval(id);
+      setRemainingMs(left);
+      id = window.setTimeout(tick, msUntilCountdownChange(left));
+    };
+
+    id = window.setTimeout(tick, msUntilCountdownChange(endAt.current - Date.now()));
+
+    return () => window.clearTimeout(id);
   }, [running]);
 
   const start = useCallback(() => {

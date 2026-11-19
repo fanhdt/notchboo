@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+import { msUntilCountUpChange, msUntilCountdownChange } from "../lib/clock";
+
 export type TimerMode = "pomodoro" | "flow";
 export type FlowPhase = "focus" | "break";
 export type FlowRatio = 3 | 4 | 5;
@@ -57,11 +59,28 @@ export function useFlowmodoro(onBreakEnd: () => void) {
     onBreakEndRef.current = onBreakEnd;
   });
 
+  // Tampilan berresolusi detik, jadi `now` hanya diperbarui saat detik yang ditampilkan berganti.
+  // Waktu yang berlalu selalu dihitung dari `startedAt` (waktu absolut), sehingga tidak ada drift.
   useEffect(() => {
     if (!running) return;
-    const id = setInterval(() => setNow(Date.now()), 250);
-    return () => clearInterval(id);
-  }, [running]);
+
+    let id = 0;
+
+    const delayFor = (t: number) => {
+      const spent = baseMs + Math.max(0, t - startedAt);
+      return phase === "focus" ? msUntilCountUpChange(spent) : msUntilCountdownChange(breakTotalMs - spent);
+    };
+
+    const tick = () => {
+      const t = Date.now();
+      setNow(t);
+      id = window.setTimeout(tick, delayFor(t));
+    };
+
+    id = window.setTimeout(tick, delayFor(Date.now()));
+
+    return () => window.clearTimeout(id);
+  }, [running, phase, baseMs, startedAt, breakTotalMs]);
 
   const spentMs = baseMs + (running ? Math.max(0, now - startedAt) : 0);
 

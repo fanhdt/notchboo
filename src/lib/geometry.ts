@@ -29,7 +29,7 @@ export const NOTCH_GEOMETRY: IslandGeometry = {
     },
     system: { width: 290, height: 138 },
     pomodoro: { width: 290, height: 138 },
-    water: { width: 290, height: 150 },
+    water: { width: 290, height: 158 },
     tasks: { width: 290, height: 176 },
     sound: { width: 290, height: 190 },
     shelf: { width: 400, height: 192 },

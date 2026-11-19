@@ -33,7 +33,7 @@ export default function ShelfPage() {
   const settingsOpen = view === "settings";
 
   return (
-    <div className="flex h-full flex-col bg-[#111113] text-white/90" style={{ colorScheme: "dark" }}>
+    <div className="flex h-full flex-col bg-surface text-white/90" style={{ colorScheme: "dark" }}>
       <TitleBar settingsOpen={settingsOpen} onToggleSettings={() => setView(settingsOpen ? "file" : "settings")} />
 
       {!settingsOpen && (
@@ -55,7 +55,7 @@ export default function ShelfPage() {
         )}
 
         {dragging && (
-          <div className="pointer-events-none absolute inset-2 z-50 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[#c8e63c]/70 bg-[#111113]/90 text-[#c8e63c]">
+          <div className="pointer-events-none absolute inset-2 z-50 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-accent/70 bg-surface/90 text-accent">
             <Icon name="upload" className="h-8 w-8" />
             <span className="text-sm font-medium">Lepas untuk menyimpan ke Shelf</span>
           </div>
