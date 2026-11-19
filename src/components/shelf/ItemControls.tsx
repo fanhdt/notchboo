@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { EXPIRY_LABEL, EXPIRY_OPTIONS, describeExpiry, type Expiry, type ShelfItem } from "../../lib/shelf";
 import Icon from "./Icon";
@@ -34,14 +34,43 @@ export function DeleteButton({ onConfirm }: { onConfirm: () => void }) {
 /** Label masa berlaku yang bisa diklik untuk mengubah masa berlaku item. */
 export function ExpiryMenu({ item, onChange }: { item: ShelfItem; onChange: (expiry: Expiry) => void }) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+  const labelId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+
+      event.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  function selectExpiry(option: Expiry) {
+    setOpen(false);
+    onChange(option);
+    triggerRef.current?.focus();
+  }
 
   return (
     <div className="relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((value) => !value)}
-        aria-haspopup="menu"
+        aria-controls={menuId}
         aria-expanded={open}
+        aria-haspopup="true"
         title="Ubah masa berlaku"
         className={`flex items-center gap-1 rounded-md px-1.5 py-0.5 text-caption transition-colors hover:bg-white/10 ${item.pinned ? "text-accent" : "text-white/45 hover:text-white/80"}`}
       >
@@ -51,20 +80,15 @@ export function ExpiryMenu({ item, onChange }: { item: ShelfItem; onChange: (exp
 
       {open && (
         <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div role="menu" className="absolute left-0 top-full z-40 mt-1 w-40 overflow-hidden rounded-lg border border-white/10 bg-surface-raised py-1 shadow-xl">
-            <p className="px-3 py-1 text-micro uppercase tracking-wide text-white/35">Hapus otomatis setelah</p>
+          <button type="button" tabIndex={-1} aria-label="Tutup menu masa berlaku" className="fixed inset-0 z-30 cursor-default" onClick={() => setOpen(false)} />
+
+          <div id={menuId} role="group" aria-labelledby={labelId} className="absolute left-0 top-full z-40 mt-1 w-40 overflow-hidden rounded-lg border border-white/10 bg-surface-raised py-1 shadow-xl">
+            <p id={labelId} className="px-3 py-1 text-micro uppercase tracking-wide text-white/35">
+              Hapus otomatis setelah
+            </p>
+
             {EXPIRY_OPTIONS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setOpen(false);
-                  onChange(option);
-                }}
-                className="block w-full px-3 py-1.5 text-left text-xs text-white/80 hover:bg-white/10"
-              >
+              <button key={option} type="button" onClick={() => selectExpiry(option)} className="block w-full px-3 py-1.5 text-left text-xs text-white/80 hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none">
                 {EXPIRY_LABEL[option]}
               </button>
             ))}
@@ -81,6 +105,7 @@ export function ConfirmDialog({ title, message, confirmLabel, onConfirm, onCance
       <div className="w-full max-w-xs rounded-xl border border-white/10 bg-surface-raised p-4 shadow-2xl">
         <h2 className="text-sm font-semibold text-white">{title}</h2>
         <p className="mt-1.5 text-xs leading-relaxed text-white/60">{message}</p>
+
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" onClick={onCancel} className="rounded-md px-3 py-1.5 text-xs text-white/70 hover:bg-white/10">
             Batal
