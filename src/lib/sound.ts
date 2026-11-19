@@ -38,6 +38,14 @@ const DEFAULTS: SoundSettings = {
   repeat: true,
 };
 
+function normalizeVolume(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULTS.volume;
+  }
+
+  return Math.min(1, Math.max(0, value));
+}
+
 function isSound(value: unknown): value is AlarmSound {
   return ALARM_SOUNDS.some((sound) => sound.id === value);
 }
@@ -47,8 +55,12 @@ export function loadSoundSettings(): SoundSettings {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULTS;
 
-    const parsed = JSON.parse(raw) as { volume?: unknown; sounds?: Partial<Record<AlarmKind, unknown>>; repeat?: unknown };
-    const volume = typeof parsed.volume === "number" ? Math.min(1, Math.max(0, parsed.volume)) : DEFAULTS.volume;
+    const parsed = JSON.parse(raw) as {
+      volume?: unknown;
+      sounds?: Partial<Record<AlarmKind, unknown>>;
+      repeat?: unknown;
+    };
+
     const pick = (kind: AlarmKind): AlarmSound => {
       const value = parsed.sounds?.[kind];
       return isSound(value) ? value : DEFAULTS.sounds[kind];
@@ -56,7 +68,16 @@ export function loadSoundSettings(): SoundSettings {
 
     const repeat = typeof parsed.repeat === "boolean" ? parsed.repeat : DEFAULTS.repeat;
 
-    return { volume, sounds: { pomodoro: pick("pomodoro"), water: pick("water"), task: pick("task"), message: pick("message") }, repeat };
+    return {
+      volume: normalizeVolume(parsed.volume),
+      sounds: {
+        pomodoro: pick("pomodoro"),
+        water: pick("water"),
+        task: pick("task"),
+        message: pick("message"),
+      },
+      repeat,
+    };
   } catch {
     return DEFAULTS;
   }
@@ -64,7 +85,12 @@ export function loadSoundSettings(): SoundSettings {
 
 export function saveSoundSettings(settings: SoundSettings) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    const normalized: SoundSettings = {
+      ...settings,
+      volume: normalizeVolume(settings.volume),
+    };
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
   } catch {
     // Penyimpanan tidak tersedia: pengaturan hanya berlaku selama aplikasi berjalan.
   }
@@ -72,25 +98,37 @@ export function saveSoundSettings(settings: SoundSettings) {
 
 /** Memutar satu suara. `volume` 0..1. Tidak melakukan apa pun untuk "off" atau volume 0. */
 export function playSound(sound: AlarmSound, volume: number) {
-  if (sound === "off" || volume <= 0) return;
+  const normalizedVolume = normalizeVolume(volume);
+
+  if (sound === "off" || normalizedVolume <= 0) return;
+
+  let ctx: AudioContext | undefined;
 
   try {
-    const ctx = new AudioContext();
-    void ctx.resume();
-    const t0 = ctx.currentTime;
+    ctx = new AudioContext();
+    const audioContext = ctx;
 
-    const master = ctx.createGain();
-    master.gain.value = Math.min(1, volume) * 0.3;
-    master.connect(ctx.destination);
+    void audioContext.resume().catch(() => {
+      // Browser/WebView menolak aktivasi audio: abaikan.
+    });
+
+    const t0 = audioContext.currentTime;
+
+    const master = audioContext.createGain();
+    master.gain.value = normalizedVolume * 0.3;
+    master.connect(audioContext.destination);
 
     const tone = (frequency: number, start: number, duration: number, type: OscillatorType = "sine", peak = 1) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+      const osc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+
       osc.type = type;
       osc.frequency.value = frequency;
+
       gain.gain.setValueAtTime(0.0001, t0 + start);
       gain.gain.exponentialRampToValueAtTime(peak, t0 + start + 0.015);
       gain.gain.exponentialRampToValueAtTime(0.0001, t0 + start + duration);
+
       osc.connect(gain).connect(master);
       osc.start(t0 + start);
       osc.stop(t0 + start + duration + 0.05);
@@ -102,30 +140,45 @@ export function playSound(sound: AlarmSound, volume: number) {
       case "beep":
         tone(880, 0, 0.6);
         break;
+
       case "chime":
         tone(1047, 0, 0.7);
         tone(1319, 0.18, 0.9);
         total = 1.2;
         break;
+
       case "bell":
         tone(660, 0, 1.6);
         tone(1320, 0, 1.0, "sine", 0.4);
         tone(1850, 0, 0.6, "sine", 0.2);
         total = 1.7;
         break;
+
       case "digital":
         [0, 0.18, 0.36].forEach((start) => tone(1000, start, 0.1, "square", 0.5));
         total = 0.6;
         break;
-      case "pop": // dua nada pendek naik, cocok untuk notifikasi pesan
+
+      case "pop":
         tone(740, 0, 0.12);
         tone(988, 0.09, 0.22);
         total = 0.5;
         break;
     }
 
-    setTimeout(() => void ctx.close(), (total + 0.3) * 1000);
+    setTimeout(
+      () => {
+        void audioContext.close().catch(() => {
+          // Context sudah tertutup atau gagal ditutup.
+        });
+      },
+      (total + 0.3) * 1000,
+    );
   } catch {
+    if (ctx && ctx.state !== "closed") {
+      void ctx.close().catch(() => {});
+    }
+
     // Audio tidak tersedia: abaikan.
   }
 }

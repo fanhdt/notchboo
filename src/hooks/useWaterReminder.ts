@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 export const WATER_GOAL = 8;
 /** Pilihan jeda untuk mode "Tetap" (menit). */
 export const WATER_INTERVALS_MIN = [30, 45, 60, 90] as const;
-/** Pilihan target harian (ml). Kisaran total minuman orang dewasa menurut EFSA ≈ 1,6–2,0 L. */
+/** Pilihan target harian (ml). */
 export const WATER_GOALS_ML = [1500, 2000, 2500] as const;
 /** Pilihan ukuran satu kali minum (ml). */
 export const WATER_GLASS_SIZES_ML = [150, 250, 350, 500] as const;
@@ -19,12 +19,9 @@ const DEFAULT_GLASS_ML = 250;
 const DEFAULT_START_HOUR = 8;
 const DEFAULT_END_HOUR = 21;
 const MIN_ACTIVE_HOURS = 4;
-/** Tambahan target untuk hari panas atau olahraga. */
 const HOT_BONUS_ML = 500;
 const SNOOZE_MS = WATER_SNOOZE_MIN * 60_000;
-/** Mode cerdas: jarak minimal antar pengingat atau dari catatan minum terakhir. */
 const SMART_MIN_GAP_MS = 60 * 60_000;
-/** Margin konservatif di bawah batas ginjal (~0,8–1,0 L/jam). Pilihan desain, bukan angka penelitian. */
 const SLOW_DOWN_ML = 750;
 const SLOW_DOWN_WINDOW_MS = 60 * 60_000;
 const TICK_MS = 10_000;
@@ -41,20 +38,23 @@ type Stored = {
   glassMl: number;
   startHour: number;
   endHour: number;
-  /** Hari (YYYY-MM-DD, waktu lokal) untuk `log` dan `hot`. Keduanya kosong lagi saat hari berganti. */
   day: string;
   hot: boolean;
   log: Entry[];
 };
 
 function todayKey(): string {
-  return new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function hourMs(now: number, hour: number): number {
-  const d = new Date(now);
-  d.setHours(hour, 0, 0, 0);
-  return d.getTime();
+  const date = new Date(now);
+  date.setHours(hour, 0, 0, 0);
+  return date.getTime();
 }
 
 function clampInt(value: number, min: number, max: number): number {
@@ -66,8 +66,10 @@ function sumMl(log: Entry[]): number {
 }
 
 function isEntry(value: unknown): value is Entry {
-  const e = value as Entry;
-  return typeof value === "object" && value !== null && typeof e.t === "number" && typeof e.ml === "number" && e.ml > 0;
+  if (typeof value !== "object" || value === null) return false;
+
+  const entry = value as Entry;
+  return typeof entry.t === "number" && Number.isFinite(entry.t) && typeof entry.ml === "number" && Number.isFinite(entry.ml) && entry.ml > 0;
 }
 
 function defaults(): Stored {
@@ -92,30 +94,31 @@ function load(): Stored {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return base;
 
-    const p = JSON.parse(raw) as Partial<Stored> & { count?: number };
+    const parsed = JSON.parse(raw) as Partial<Stored> & { count?: number };
 
-    const startHour = typeof p.startHour === "number" ? clampInt(p.startHour, 0, 24 - MIN_ACTIVE_HOURS) : base.startHour;
-    const endHour = typeof p.endHour === "number" ? clampInt(p.endHour, startHour + MIN_ACTIVE_HOURS, 24) : Math.max(base.endHour, startHour + MIN_ACTIVE_HOURS);
+    const startHour = typeof parsed.startHour === "number" && Number.isFinite(parsed.startHour) ? clampInt(parsed.startHour, 0, 24 - MIN_ACTIVE_HOURS) : base.startHour;
 
-    let log = Array.isArray(p.log) ? p.log.filter(isEntry) : [];
+    const endHour = typeof parsed.endHour === "number" && Number.isFinite(parsed.endHour) ? clampInt(parsed.endHour, startHour + MIN_ACTIVE_HOURS, 24) : Math.max(base.endHour, startHour + MIN_ACTIVE_HOURS);
+
+    let log = Array.isArray(parsed.log) ? parsed.log.filter(isEntry) : [];
 
     // Migrasi dari versi lama yang hanya menyimpan jumlah gelas.
-    if (!Array.isArray(p.log) && typeof p.count === "number" && p.count > 0) {
-      const t = hourMs(Date.now(), 0);
-      log = Array.from({ length: Math.min(p.count, 40) }, () => ({ t, ml: DEFAULT_GLASS_ML }));
+    if (!Array.isArray(parsed.log) && typeof parsed.count === "number" && parsed.count > 0) {
+      const timestamp = hourMs(Date.now(), 0);
+      log = Array.from({ length: Math.min(Math.floor(parsed.count), 40) }, () => ({ t: timestamp, ml: DEFAULT_GLASS_ML }));
     }
 
     return {
-      enabled: p.enabled !== false,
-      mode: p.mode === "fixed" ? "fixed" : "smart",
-      intervalMin: typeof p.intervalMin === "number" && p.intervalMin > 0 ? p.intervalMin : base.intervalMin,
-      goalMl: typeof p.goalMl === "number" ? clampInt(p.goalMl, 1000, 4000) : base.goalMl,
-      glassMl: WATER_GLASS_SIZES_ML.find((ml) => ml === p.glassMl) ?? base.glassMl,
+      enabled: parsed.enabled !== false,
+      mode: parsed.mode === "fixed" ? "fixed" : "smart",
+      intervalMin: typeof parsed.intervalMin === "number" && Number.isFinite(parsed.intervalMin) && parsed.intervalMin > 0 ? clampInt(parsed.intervalMin, 1, 1440) : base.intervalMin,
+      goalMl: typeof parsed.goalMl === "number" && Number.isFinite(parsed.goalMl) ? clampInt(parsed.goalMl, 1000, 4000) : base.goalMl,
+      glassMl: WATER_GLASS_SIZES_ML.find((ml) => ml === parsed.glassMl) ?? base.glassMl,
       startHour,
       endHour,
-      day: typeof p.day === "string" ? p.day : base.day,
-      hot: p.hot === true,
-      log,
+      day: typeof parsed.day === "string" ? parsed.day : base.day,
+      hot: parsed.hot === true,
+      log: log.slice(-MAX_LOG),
     };
   } catch {
     return base;
@@ -130,13 +133,18 @@ function save(stored: Stored) {
   }
 }
 
-/** Hari berganti: catatan dan "hari panas" kembali kosong. */
-function fresh(stored: Stored): Stored {
-  const day = todayKey();
-  return stored.day === day ? stored : { ...stored, day, hot: false, log: [] };
+/** Reset data harian tanpa mengubah preferensi pengguna. */
+function fresh(stored: Stored, day = todayKey()): Stored {
+  if (stored.day === day) return stored;
+
+  return {
+    ...stored,
+    day,
+    hot: false,
+    log: [],
+  };
 }
 
-/** Target kumulatif yang "seharusnya" tercapai sekarang: naik merata sepanjang jam aktif. */
 function expectedMlAt(goal: number, now: number, start: number, end: number): number {
   if (now <= start) return 0;
   if (now >= end) return goal;
@@ -157,58 +165,45 @@ type ScheduleInput = {
   snoozeUntil: number | null;
 };
 
-/** Kapan pengingat berikutnya berbunyi; null = tidak ada lagi hari ini (atau mati). */
-function nextReminderAt(p: ScheduleInput): number | null {
-  if (!p.enabled || p.totalMl >= p.goalMl || p.now >= p.end) return null;
-
-  let at: number;
-  if (p.snoozeUntil !== null) {
-    at = p.snoozeUntil;
-  } else if (p.mode === "fixed") {
-    at = p.lastEventAt + p.intervalMin * 60_000;
-  } else {
-    // Cerdas: tunggu sampai asupan tertinggal sebesar satu gelas dari kurva target,
-    // tapi jangan lebih sering dari jarak minimal.
-    const reach = p.start + ((p.totalMl + p.glassMl) / p.goalMl) * (p.end - p.start);
-    at = Math.max(p.lastEventAt + SMART_MIN_GAP_MS, reach);
+function nextReminderAt(params: ScheduleInput): number | null {
+  if (!params.enabled || params.totalMl >= params.goalMl || params.now >= params.end) {
+    return null;
   }
 
-  at = Math.max(at, p.start);
-  return at < p.end ? at : null;
+  let at: number;
+
+  if (params.snoozeUntil !== null) {
+    at = params.snoozeUntil;
+  } else if (params.mode === "fixed") {
+    at = params.lastEventAt + params.intervalMin * 60_000;
+  } else {
+    const reach = params.start + ((params.totalMl + params.glassMl) / params.goalMl) * (params.end - params.start);
+
+    at = Math.max(params.lastEventAt + SMART_MIN_GAP_MS, reach);
+  }
+
+  at = Math.max(at, params.start);
+  return at < params.end ? at : null;
 }
 
 export interface WaterReminder {
   enabled: boolean;
-  /** "smart": hanya mengingatkan saat tertinggal dari target. "fixed": jeda tetap. */
   mode: WaterMode;
-  /** Jeda untuk mode "fixed" (menit). */
   intervalMin: number;
-  /** Jumlah catatan minum hari ini (versi lama: jumlah gelas). */
   count: number;
-  /** Total yang sudah diminum hari ini (ml). */
   totalMl: number;
-  /** Target efektif hari ini, sudah termasuk bonus hari panas. */
   goalMl: number;
-  /** Target dasar tanpa bonus. */
   baseGoalMl: number;
-  /** Hari panas atau olahraga: target hari ini +500 ml. */
   hot: boolean;
-  /** Ukuran satu kali minum (ml). */
   glassMl: number;
   startHour: number;
   endHour: number;
-  /** Target kumulatif untuk jam sekarang (ml). */
   expectedMl: number;
-  /** Selisih dari target kumulatif; 0 jika tidak tertinggal (ml). */
   behindMl: number;
   status: WaterStatus;
-  /** Sudah banyak minum dalam sejam terakhir: tahan dulu. */
   slowDown: boolean;
-  /** Waktu pengingat berikutnya (ms epoch); null jika mati, sedang berbunyi, atau tidak ada lagi hari ini. */
   nextAt: number | null;
-  /** Sisa waktu ke pengingat berikutnya; null jika `nextAt` null. */
   remainingMs: number | null;
-  /** Pengingat sedang berbunyi dan menunggu dijawab. */
   due: boolean;
   setEnabled: (enabled: boolean) => void;
   setMode: (mode: WaterMode) => void;
@@ -217,17 +212,15 @@ export interface WaterReminder {
   setGlassMl: (ml: number) => void;
   setHot: (hot: boolean) => void;
   setActiveHours: (startHour: number, endHour: number) => void;
-  /** Catat satu kali minum (default: ukuran gelas) dan atur ulang jadwal. */
   drink: (ml?: number) => void;
-  /** Tunda pengingat. */
   snooze: () => void;
-  /** Batalkan catatan terakhir (mis. salah tekan). Tidak mengubah jadwal. */
   undo: () => void;
 }
 
 /**
- * Pengingat minum berbasis target harian (ml). Mode cerdas hanya mengingatkan saat asupan tertinggal
- * dari kurva target di jam aktif; mode tetap mengingatkan tiap N menit. Disimpan di localStorage.
+ * Pengingat minum berbasis target harian.
+ * Mode cerdas mengingatkan saat asupan tertinggal dari kurva target.
+ * Mode tetap mengingatkan setiap N menit.
  */
 export function useWaterReminder(): WaterReminder {
   const [stored, setStored] = useState<Stored>(() => fresh(load()));
@@ -236,7 +229,7 @@ export function useWaterReminder(): WaterReminder {
   const [snoozeUntil, setSnoozeUntil] = useState<number | null>(null);
   const [due, setDue] = useState(false);
 
-  const update = useCallback((change: (s: Stored) => Stored) => {
+  const update = useCallback((change: (stored: Stored) => Stored) => {
     setStored((previous) => {
       const next = change(fresh(previous));
       save(next);
@@ -244,41 +237,85 @@ export function useWaterReminder(): WaterReminder {
     });
   }, []);
 
-  // Jadwal dimulai ulang saat pengingat dinyalakan/dimatikan atau mode/jedanya diganti.
+  // Deteksi pergantian tanggal menggunakan jam lokal.
   useEffect(() => {
-    const t = Date.now();
-    setNow(t);
-    setLastEventAt(t);
+    const checkDay = () => {
+      const timestamp = Date.now();
+      const day = todayKey();
+
+      setNow(timestamp);
+
+      setStored((previous) => {
+        const next = fresh(previous, day);
+
+        if (next !== previous) {
+          save(next);
+        }
+
+        return next;
+      });
+
+      setLastEventAt(timestamp);
+      setSnoozeUntil(null);
+      setDue(false);
+    };
+
+    const interval = window.setInterval(checkDay, TICK_MS);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        checkDay();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
+  // Jadwal dimulai ulang saat pengaturan jadwal berubah.
+  useEffect(() => {
+    const timestamp = Date.now();
+
+    setNow(timestamp);
+    setLastEventAt(timestamp);
     setSnoozeUntil(null);
     setDue(false);
   }, [stored.enabled, stored.mode, stored.intervalMin]);
 
-  // Detak ringan, hanya saat pengingat aktif.
+  // Detak ringan untuk memperbarui jadwal.
   useEffect(() => {
     if (!stored.enabled) return;
-    const id = setInterval(() => setNow(Date.now()), TICK_MS);
-    return () => clearInterval(id);
+
+    const interval = window.setInterval(() => setNow(Date.now()), TICK_MS);
+    return () => window.clearInterval(interval);
   }, [stored.enabled]);
 
-  const s = fresh(stored);
-  const goalMl = s.goalMl + (s.hot ? HOT_BONUS_ML : 0);
-  const totalMl = sumMl(s.log);
-  const start = hourMs(now, s.startHour);
-  const end = hourMs(now, s.endHour);
+  const current = fresh(stored);
+  const goalMl = current.goalMl + (current.hot ? HOT_BONUS_ML : 0);
+  const totalMl = sumMl(current.log);
+
+  const start = hourMs(now, current.startHour);
+  const end = hourMs(now, current.endHour);
 
   const expectedMl = expectedMlAt(goalMl, now, start, end);
   const behindMl = Math.max(0, expectedMl - totalMl);
-  const status: WaterStatus = totalMl >= goalMl ? "done" : behindMl >= s.glassMl ? "behind" : "onTrack";
-  const slowDown = sumMl(s.log.filter((entry) => now - entry.t < SLOW_DOWN_WINDOW_MS)) >= SLOW_DOWN_ML;
+
+  const status: WaterStatus = totalMl >= goalMl ? "done" : behindMl >= current.glassMl ? "behind" : "onTrack";
+
+  const slowDown = sumMl(current.log.filter((entry) => now >= entry.t && now - entry.t < SLOW_DOWN_WINDOW_MS)) >= SLOW_DOWN_ML;
 
   const nextAt = due
     ? null
     : nextReminderAt({
-        enabled: s.enabled,
-        mode: s.mode,
-        intervalMin: s.intervalMin,
+        enabled: current.enabled,
+        mode: current.mode,
+        intervalMin: current.intervalMin,
         goalMl,
-        glassMl: s.glassMl,
+        glassMl: current.glassMl,
         totalMl,
         now,
         start,
@@ -290,6 +327,7 @@ export function useWaterReminder(): WaterReminder {
   // Waktunya berbunyi.
   useEffect(() => {
     if (due || nextAt === null || now < nextAt) return;
+
     setDue(true);
     setLastEventAt(now);
     setSnoozeUntil(null);
@@ -297,13 +335,21 @@ export function useWaterReminder(): WaterReminder {
 
   const drink = useCallback(
     (ml?: number) => {
-      const t = Date.now();
+      const timestamp = Date.now();
+
       update((previous) => ({
         ...previous,
-        log: [...previous.log, { t, ml: typeof ml === "number" && ml > 0 ? ml : previous.glassMl }].slice(-MAX_LOG),
+        log: [
+          ...previous.log,
+          {
+            t: timestamp,
+            ml: typeof ml === "number" && Number.isFinite(ml) && ml > 0 ? clampInt(ml, 1, 2000) : previous.glassMl,
+          },
+        ].slice(-MAX_LOG),
       }));
-      setNow(t);
-      setLastEventAt(t);
+
+      setNow(timestamp);
+      setLastEventAt(timestamp);
       setSnoozeUntil(null);
       setDue(false);
     },
@@ -311,29 +357,33 @@ export function useWaterReminder(): WaterReminder {
   );
 
   const undo = useCallback(() => {
-    update((previous) => ({ ...previous, log: previous.log.slice(0, -1) }));
+    update((previous) => ({
+      ...previous,
+      log: previous.log.slice(0, -1),
+    }));
   }, [update]);
 
   const snooze = useCallback(() => {
-    const t = Date.now();
-    setNow(t);
-    setLastEventAt(t);
-    setSnoozeUntil(t + SNOOZE_MS);
+    const timestamp = Date.now();
+
+    setNow(timestamp);
+    setLastEventAt(timestamp);
+    setSnoozeUntil(timestamp + SNOOZE_MS);
     setDue(false);
   }, []);
 
   return {
-    enabled: s.enabled,
-    mode: s.mode,
-    intervalMin: s.intervalMin,
-    count: s.log.length,
+    enabled: current.enabled,
+    mode: current.mode,
+    intervalMin: current.intervalMin,
+    count: current.log.length,
     totalMl,
     goalMl,
-    baseGoalMl: s.goalMl,
-    hot: s.hot,
-    glassMl: s.glassMl,
-    startHour: s.startHour,
-    endHour: s.endHour,
+    baseGoalMl: current.goalMl,
+    hot: current.hot,
+    glassMl: current.glassMl,
+    startHour: current.startHour,
+    endHour: current.endHour,
     expectedMl,
     behindMl,
     status,
@@ -343,14 +393,31 @@ export function useWaterReminder(): WaterReminder {
     due,
     setEnabled: (enabled) => update((previous) => ({ ...previous, enabled })),
     setMode: (mode) => update((previous) => ({ ...previous, mode })),
-    setIntervalMin: (intervalMin) => update((previous) => ({ ...previous, intervalMin })),
-    setGoalMl: (ml) => update((previous) => ({ ...previous, goalMl: clampInt(ml, 1000, 4000) })),
-    setGlassMl: (ml) => update((previous) => ({ ...previous, glassMl: clampInt(ml, 50, 1000) })),
+    setIntervalMin: (minutes) =>
+      update((previous) => ({
+        ...previous,
+        intervalMin: clampInt(minutes, 1, 1440),
+      })),
+    setGoalMl: (ml) =>
+      update((previous) => ({
+        ...previous,
+        goalMl: clampInt(ml, 1000, 4000),
+      })),
+    setGlassMl: (ml) =>
+      update((previous) => ({
+        ...previous,
+        glassMl: clampInt(ml, 50, 1000),
+      })),
     setHot: (hot) => update((previous) => ({ ...previous, hot })),
     setActiveHours: (startHour, endHour) =>
       update((previous) => {
         const startValue = clampInt(startHour, 0, 24 - MIN_ACTIVE_HOURS);
-        return { ...previous, startHour: startValue, endHour: clampInt(endHour, startValue + MIN_ACTIVE_HOURS, 24) };
+
+        return {
+          ...previous,
+          startHour: startValue,
+          endHour: clampInt(endHour, startValue + MIN_ACTIVE_HOURS, 24),
+        };
       }),
     drink,
     snooze,
