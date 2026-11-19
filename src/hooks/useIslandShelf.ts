@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { shelf, type ShelfItem } from "../lib/shelf";
 
@@ -23,25 +23,39 @@ export function useIslandShelf(active: boolean, version: number): UseIslandShelf
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const requestId = useRef(0);
+
   useEffect(() => {
-    if (!active) return;
+    const currentRequest = ++requestId.current;
+
+    if (!active) {
+      setLoading(false);
+      return;
+    }
 
     let cancelled = false;
+
     setLoading(true);
+    setError(null);
 
     shelf
       .list({})
       .then((result) => {
-        if (cancelled) return;
+        if (cancelled || requestId.current !== currentRequest) return;
+
         setItems(result.slice(0, VISIBLE_ITEMS));
         setTotal(result.length);
         setError(null);
       })
       .catch((reason) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
+        if (cancelled || requestId.current !== currentRequest) return;
+
+        setError(reason instanceof Error ? reason.message : String(reason));
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (cancelled || requestId.current !== currentRequest) return;
+
+        setLoading(false);
       });
 
     return () => {
