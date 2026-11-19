@@ -1,3 +1,4 @@
+
 use serde::Serialize;
 
 /// Nama event ke React; didengarkan oleh Mochi untuk mengikuti kursor dengan mata.
@@ -19,22 +20,36 @@ pub struct CursorMoved {
 /// yang sama dengan deteksi hover, sehingga posisi kursor cukup dibaca sekali per putaran.
 #[derive(Default)]
 pub struct GazeTracker {
-    last: Option<(f64, f64)>,
+    last_cursor: Option<(f64, f64)>,
+    last_anchor: Option<(f64, f64)>,
 }
 
 impl GazeTracker {
     /// `cursor` dan `anchor` dalam piksel fisik layar. `anchor` adalah titik tengah-atas window.
-    /// Hasilnya `Some` hanya bila kursor bergerak cukup jauh sejak gerakan yang terakhir dilaporkan.
+    /// Hasilnya `Some` hanya bila kursor atau anchor bergerak cukup jauh sejak laporan terakhir.
     pub fn update(&mut self, cursor: (f64, f64), anchor: (f64, f64)) -> Option<CursorMoved> {
-        let Some((last_x, last_y)) = self.last else {
-            self.last = Some(cursor);
+        let (Some(last_cursor), Some(last_anchor)) =
+            (self.last_cursor, self.last_anchor)
+        else {
+            self.last_cursor = Some(cursor);
+            self.last_anchor = Some(anchor);
             return None;
         };
 
-        if (cursor.0 - last_x).abs() + (cursor.1 - last_y).abs() < MIN_MOVE_PX {
+        let cursor_moved = (cursor.0 - last_cursor.0).abs()
+            + (cursor.1 - last_cursor.1).abs()
+            >= MIN_MOVE_PX;
+
+        let anchor_moved = (anchor.0 - last_anchor.0).abs()
+            + (anchor.1 - last_anchor.1).abs()
+            >= MIN_MOVE_PX;
+
+        if !cursor_moved && !anchor_moved {
             return None;
         }
-        self.last = Some(cursor);
+
+        self.last_cursor = Some(cursor);
+        self.last_anchor = Some(anchor);
 
         Some(CursorMoved {
             dx: ((cursor.0 - anchor.0) / GAZE_RANGE_PX).clamp(-1.0, 1.0),
@@ -77,7 +92,10 @@ mod tests {
         let mut gaze = GazeTracker::default();
         gaze.update((960.0, 0.0), ANCHOR);
 
-        let moved = gaze.update((960.0 + 300.0, 150.0), ANCHOR).expect("harus dilaporkan");
+        let moved = gaze
+            .update((960.0 + 300.0, 150.0), ANCHOR)
+            .expect("harus dilaporkan");
+
         assert_eq!(moved, CursorMoved { dx: 0.5, dy: 0.25 });
     }
 
@@ -86,10 +104,37 @@ mod tests {
         let mut gaze = GazeTracker::default();
         gaze.update((0.0, 0.0), ANCHOR);
 
-        let far = gaze.update((5000.0, 5000.0), ANCHOR).expect("harus dilaporkan");
+        let far = gaze
+            .update((5000.0, 5000.0), ANCHOR)
+            .expect("harus dilaporkan");
         assert_eq!(far, CursorMoved { dx: 1.0, dy: 1.0 });
 
-        let left = gaze.update((-5000.0, -5000.0), ANCHOR).expect("harus dilaporkan");
+        let left = gaze
+            .update((-5000.0, -5000.0), ANCHOR)
+            .expect("harus dilaporkan");
         assert_eq!(left, CursorMoved { dx: -1.0, dy: -1.0 });
+    }
+
+    #[test]
+    fn anchor_movement_updates_direction_without_cursor_movement() {
+        let mut gaze = GazeTracker::default();
+        gaze.update((960.0, 300.0), ANCHOR);
+
+        let moved = gaze
+            .update((960.0, 300.0), (960.0, 150.0))
+            .expect("perubahan anchor harus dilaporkan");
+
+        assert_eq!(moved, CursorMoved { dx: 0.0, dy: 0.25 });
+    }
+
+    #[test]
+    fn tiny_anchor_movement_is_ignored() {
+        let mut gaze = GazeTracker::default();
+        gaze.update((960.0, 300.0), ANCHOR);
+
+        assert_eq!(
+            gaze.update((960.0, 300.0), (960.0, 1.0)),
+            None
+        );
     }
 }
