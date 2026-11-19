@@ -20,13 +20,36 @@ export function useMessageNotice() {
   const counter = useRef(0);
 
   useEffect(() => {
-    const unlisten = listen<Payload>("message-notification", (event) => {
-      counter.current += 1;
-      setNotice({ ...event.payload, key: counter.current });
-    });
+    let active = true;
+    let unlisten: (() => void) | undefined;
+
+    const initialize = async () => {
+      try {
+        const stopListening = await listen<Payload>("message-notification", (event) => {
+          if (!active) return;
+
+          counter.current += 1;
+          setNotice({ ...event.payload, key: counter.current });
+        });
+
+        if (!active) {
+          stopListening();
+          return;
+        }
+
+        unlisten = stopListening;
+      } catch (error) {
+        if (active) {
+          console.error("Gagal memasang listener notifikasi:", error);
+        }
+      }
+    };
+
+    void initialize();
 
     return () => {
-      unlisten.then((stop) => stop());
+      active = false;
+      unlisten?.();
     };
   }, []);
 
