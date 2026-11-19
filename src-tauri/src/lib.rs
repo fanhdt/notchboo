@@ -1,3 +1,4 @@
+
 mod activity;
 mod autostart;
 mod cursor_geometry;
@@ -32,11 +33,11 @@ mod tasks;
 mod tray;
 mod window;
 
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         // Harus plugin pertama: menjalankan aplikasi kedua kali (mis. setelah mulai-otomatis) tidak
         // membuka salinan baru. Island yang sudah berjalan tetap satu-satunya.
         .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
@@ -108,7 +109,15 @@ pub fn run() {
             tasks::tasks_load,
             tasks::tasks_save,
             tasks::tasks_open_window
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        ]);
+
+    let app = builder
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|_app_handle, event| {
+        if let RunEvent::Exit = event {
+            notifications::stop_notification_watcher();
+        }
+    });
 }

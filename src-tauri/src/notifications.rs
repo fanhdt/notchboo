@@ -1,3 +1,6 @@
+
+// src-tauri/src/notifications.rs
+
 //! Notifikasi pesan WhatsApp untuk island.
 //!
 //! Windows tidak menyediakan cara resmi bagi aplikasi biasa untuk membaca notifikasi aplikasi lain
@@ -40,6 +43,7 @@ pub fn emit_sample(app: &AppHandle) {
     );
 }
 
+/// Memulai watcher notifikasi pada Windows.
 pub fn start_notification_watcher(app: &AppHandle) {
     #[cfg(windows)]
     windows_source::start(app);
@@ -48,13 +52,23 @@ pub fn start_notification_watcher(app: &AppHandle) {
     let _ = app;
 }
 
+/// Meminta watcher berhenti dan menunggu worker selesai.
+pub fn stop_notification_watcher() {
+    #[cfg(windows)]
+    windows_source::stop();
+}
+
 #[cfg(windows)]
 mod windows_source {
     use std::{
         fs,
         path::{Path, PathBuf},
-        thread,
-        time::{Duration, SystemTime},
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            Mutex, OnceLock,
+        },
+        thread::{self, JoinHandle},
+        time::{Duration, Instant, SystemTime},
     };
 
     use rusqlite::{params, types::ValueRef, Connection};
@@ -67,6 +81,10 @@ mod windows_source {
     const MAX_BACKOFF_STEPS: u32 = 40;
     const MAX_BODY_CHARS: usize = 200;
     const MAX_SENDER_CHARS: usize = 60;
+
+    static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
+    static WATCHER_HANDLE: OnceLock<Mutex<Option<JoinHandle<()>>>> = OnceLock::new();
+
     /// Aplikasi yang dikenali. Notifikasi aplikasi desktop dikenali dari nama aplikasinya; notifikasi
     /// versi web milik browser, jadi dikenali dari asal situs yang tercantum di toast.
     struct Source {
@@ -77,8 +95,18 @@ mod windows_source {
     }
 
     const SOURCES: [Source; 2] = [
-        Source { id: "whatsapp", name: "WhatsApp", app_ids: &["whatsapp"], origins: &["web.whatsapp.com"] },
-        Source { id: "instagram", name: "Instagram", app_ids: &["instagram"], origins: &["instagram.com"] },
+        Source {
+            id: "whatsapp",
+            name: "WhatsApp",
+            app_ids: &["whatsapp"],
+            origins: &["web.whatsapp.com"],
+        },
+        Source {
+            id: "instagram",
+            name: "Instagram",
+            app_ids: &["instagram"],
+            origins: &["instagram.com"],
+        },
     ];
 
     fn find_source(app_id: &str, xml: &str) -> Option<&'static Source> {
@@ -88,24 +116,105 @@ mod windows_source {
         SOURCES
             .iter()
             .find(|source| source.app_ids.iter().any(|id| app_id.contains(id)))
-            .or_else(|| SOURCES.iter().find(|source| source.origins.iter().any(|origin| xml.contains(origin))))
+            .or_else(|| {
+                SOURCES
+                    .iter()
+                    .find(|source| source.origins.iter().any(|origin| xml.contains(origin)))
+            })
     }
 
-    const DB_FILES: [&str; 3] = ["wpndatabase.db", "wpndatabase.db-wal", "wpndatabase.db-shm"];
+    const DB_FILES: [&str; 3] = [
+        "wpndatabase.db",
+        "wpndatabase.db-wal",
+        "wpndatabase.db-shm",
+    ];
+
+    fn watcher_handle() -> &'static Mutex<Option<JoinHandle<()>>> {
+        WATCHER_HANDLE.get_or_init(|| Mutex::new(None))
+    }
 
     pub fn start(app: &AppHandle) {
+        let mut handle = watcher_handle()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        // Jangan membuat worker kedua jika watcher sudah pernah dimulai
+        // dan handle-nya masih tersimpan.
+        if handle.is_some() {
+            return;
+        }
+
+        STOP_REQUESTED.store(false, Ordering::Release);
+
         let app = app.clone();
 
-        thread::spawn(move || {
-            if let Err(error) = run(&app) {
-                eprintln!("pembaca notifikasi tidak dijalankan: {error}");
+        match thread::Builder::new()
+            .name("notchboo-notification-watcher".into())
+            .spawn(move || {
+                if let Err(error) = run(&app) {
+                    eprintln!("pembaca notifikasi tidak dijalankan: {error}");
+                }
+            })
+        {
+            Ok(worker) => {
+                *handle = Some(worker);
             }
-        });
+            Err(error) => {
+                eprintln!("gagal membuat worker notifikasi: {error}");
+            }
+        }
+    }
+
+    pub fn stop() {
+        STOP_REQUESTED.store(true, Ordering::Release);
+
+        // Ambil handle lalu lepaskan mutex sebelum join.
+        // Dengan begitu, worker tidak tertahan oleh mutex saat proses shutdown.
+        let worker = {
+            let mut handle = watcher_handle()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+            handle.take()
+        };
+
+        if let Some(worker) = worker {
+            // Bangunkan worker jika sedang menunggu interval polling.
+            worker.thread().unpark();
+
+            if worker.join().is_err() {
+                eprintln!("worker notifikasi berhenti karena panic");
+            }
+        }
+    }
+
+    /// Menunggu selama durasi tertentu, tetapi dapat dibangunkan oleh permintaan shutdown.
+    fn wait_or_stop(duration: Duration) -> bool {
+        let deadline = Instant::now() + duration;
+
+        loop {
+            if STOP_REQUESTED.load(Ordering::Acquire) {
+                return false;
+            }
+
+            let remaining = deadline.saturating_duration_since(Instant::now());
+
+            if remaining.is_zero() {
+                return !STOP_REQUESTED.load(Ordering::Acquire);
+            }
+
+            thread::park_timeout(remaining);
+        }
     }
 
     fn source_dir() -> Option<PathBuf> {
         let base = std::env::var_os("LOCALAPPDATA")?;
-        Some(PathBuf::from(base).join("Microsoft").join("Windows").join("Notifications"))
+        Some(
+            PathBuf::from(base)
+                .join("Microsoft")
+                .join("Windows")
+                .join("Notifications"),
+        )
     }
 
     /// Waktu ubah dan ukuran berkas database. Berubah berarti ada notifikasi baru (atau dihapus).
@@ -126,15 +235,19 @@ mod windows_source {
 
         for name in DB_FILES {
             let target = to.join(name);
+
             match fs::copy(from.join(name), &target) {
                 Ok(_) => {}
                 // -wal dan -shm tidak selalu ada.
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound && name != DB_FILES[0] => {
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::NotFound && name != DB_FILES[0] =>
+                {
                     let _ = fs::remove_file(&target);
                 }
                 Err(error) => return Err(error),
             }
         }
+
         Ok(())
     }
 
@@ -148,6 +261,7 @@ mod windows_source {
             for name in DB_FILES {
                 let _ = fs::remove_file(self.0.join(name));
             }
+
             let _ = fs::remove_dir(self.0);
         }
     }
@@ -156,25 +270,46 @@ mod windows_source {
     enum Snapshot {
         /// Pembacaan pertama: hanya mengambil Id terbesar sebagai titik awal.
         Baseline(i64),
-        New { notices: Vec<MessageNotice>, newest: i64 },
+        New {
+            notices: Vec<MessageNotice>,
+            newest: i64,
+        },
     }
 
     /// Menyalin database, membacanya, lalu menghapus salinannya. Salinan tidak dibiarkan di folder sementara.
-    fn read_snapshot(source: &Path, copy_dir: &Path, after: Option<i64>) -> Result<Snapshot, String> {
+    fn read_snapshot(
+        source: &Path,
+        copy_dir: &Path,
+        after: Option<i64>,
+    ) -> Result<Snapshot, String> {
         let _cleanup = CopyGuard(copy_dir);
 
-        copy_database(source, copy_dir).map_err(|error| format!("database notifikasi tidak bisa disalin: {error}"))?;
-        let connection = Connection::open(copy_dir.join(DB_FILES[0])).map_err(|error| format!("salinan database tidak bisa dibuka: {error}"))?;
-        let schema_error = |error: rusqlite::Error| format!("database notifikasi tidak bisa dibaca (skema berubah?): {error}");
+        copy_database(source, copy_dir)
+            .map_err(|error| format!("database notifikasi tidak bisa disalin: {error}"))?;
+
+        let connection = Connection::open(copy_dir.join(DB_FILES[0]))
+            .map_err(|error| format!("salinan database tidak bisa dibuka: {error}"))?;
+
+        let schema_error = |error: rusqlite::Error| {
+            format!("database notifikasi tidak bisa dibaca (skema berubah?): {error}")
+        };
 
         match after {
             None => {
-                let max: Option<i64> = connection.query_row("SELECT MAX(Id) FROM Notification", [], |row| row.get(0)).map_err(schema_error)?;
+                let max: Option<i64> = connection
+                    .query_row("SELECT MAX(Id) FROM Notification", [], |row| row.get(0))
+                    .map_err(schema_error)?;
+
                 Ok(Snapshot::Baseline(max.unwrap_or(0)))
             }
             Some(after) => {
-                let (notices, newest) = read_new(&connection, after).map_err(schema_error)?;
-                Ok(Snapshot::New { notices, newest: newest.max(after) })
+                let (notices, newest) =
+                    read_new(&connection, after).map_err(schema_error)?;
+
+                Ok(Snapshot::New {
+                    notices,
+                    newest: newest.max(after),
+                })
             }
         }
     }
@@ -189,19 +324,34 @@ mod windows_source {
         // `None` = belum mengambil titik awal. Notifikasi yang sudah ada sebelum Notchboo menyala tidak ditampilkan.
         let mut last_id: Option<i64> = None;
         let mut last_seen: Option<Vec<Option<(SystemTime, u64)>>> = None;
-        // Kegagalan tidak pernah mematikan watcher: jeda dinaikkan bertahap, dan pesan yang sama dicatat sekali.
+
+        // Kegagalan tidak pernah mematikan watcher: jeda dinaikkan bertahap,
+        // dan pesan yang sama dicatat sekali.
         let mut failures: u32 = 0;
         let mut last_error: Option<String> = None;
 
         loop {
-            thread::sleep(POLL_INTERVAL + POLL_INTERVAL * failures.min(MAX_BACKOFF_STEPS));
+            let delay = POLL_INTERVAL + POLL_INTERVAL * failures.min(MAX_BACKOFF_STEPS);
+
+            if !wait_or_stop(delay) {
+                break;
+            }
 
             let current = fingerprint(&source);
+
             if last_seen.as_ref() == Some(&current) {
                 continue;
             }
 
-            match read_snapshot(&source, &copy_dir, last_id) {
+            let snapshot = read_snapshot(&source, &copy_dir, last_id);
+
+            // Jangan memproses atau meneruskan notifikasi jika shutdown diminta
+            // ketika pembacaan database sedang berlangsung.
+            if STOP_REQUESTED.load(Ordering::Acquire) {
+                break;
+            }
+
+            match snapshot {
                 Ok(snapshot) => {
                     if failures > 0 {
                         eprintln!("notifikasi: pembaca pulih setelah {failures} kegagalan");
@@ -216,16 +366,23 @@ mod windows_source {
                         }
                         Snapshot::New { notices, newest } => {
                             last_id = Some(newest);
+
                             for notice in notices {
+                                if STOP_REQUESTED.load(Ordering::Acquire) {
+                                    break;
+                                }
+
                                 // Gagal mengirim satu event bukan masalah fatal.
                                 let _ = app.emit(MESSAGE_EVENT, notice);
                             }
                         }
                     }
+
                     last_seen = Some(current);
                 }
                 Err(error) => {
                     failures = failures.saturating_add(1);
+
                     if last_error.as_deref() != Some(error.as_str()) {
                         eprintln!("notifikasi: {error} (akan dicoba lagi)");
                         last_error = Some(error);
@@ -233,10 +390,15 @@ mod windows_source {
                 }
             }
         }
+
+        Ok(())
     }
 
     /// Notifikasi WhatsApp dengan Id di atas `after`, beserta Id terbesar yang terbaca.
-    fn read_new(connection: &Connection, after: i64) -> rusqlite::Result<(Vec<MessageNotice>, i64)> {
+    fn read_new(
+        connection: &Connection,
+        after: i64,
+    ) -> rusqlite::Result<(Vec<MessageNotice>, i64)> {
         let mut statement = connection.prepare(
             "SELECT n.Id, h.PrimaryId, n.Payload \
              FROM Notification n JOIN NotificationHandler h ON h.RecordId = n.HandlerId \
@@ -257,21 +419,30 @@ mod windows_source {
                 ValueRef::Blob(bytes) | ValueRef::Text(bytes) => bytes.to_vec(),
                 _ => continue,
             };
+
             let xml = decode(&payload);
 
             // WhatsApp Web: toast-nya milik browser (Chrome, Edge, ...), tetapi mencantumkan asal situsnya.
             let source = find_source(&app_id, &xml);
+
             // Nama aplikasi pengirim hanya dicatat pada build debug; isi toast tidak pernah dicatat.
             if cfg!(debug_assertions) {
-                eprintln!("notifikasi: id {id} dari \"{app_id}\" (dikenali: {})", source.map_or("tidak", |source| source.name));
+                eprintln!(
+                    "notifikasi: id {id} dari \"{app_id}\" (dikenali: {})",
+                    source.map_or("tidak", |source| source.name)
+                );
             }
+
             let Some(source) = source else {
                 continue;
             };
 
             match parse_toast(&xml, source) {
                 Some(notice) => notices.push(notice),
-                None => eprintln!("notifikasi: id {id} dari {} cocok tetapi teksnya tidak terbaca", source.name),
+                None => eprintln!(
+                    "notifikasi: id {id} dari {} cocok tetapi teksnya tidak terbaca",
+                    source.name
+                ),
             }
         }
 
@@ -280,19 +451,27 @@ mod windows_source {
 
     /// Payload toast biasanya UTF-8, tetapi sebagian versi Windows menyimpannya sebagai UTF-16.
     fn decode(bytes: &[u8]) -> String {
-        let utf16 = bytes.starts_with(&[0xFF, 0xFE]) || (bytes.len() >= 4 && bytes[1] == 0 && bytes[3] == 0);
+        let utf16 = bytes.starts_with(&[0xFF, 0xFE])
+            || (bytes.len() >= 4 && bytes[1] == 0 && bytes[3] == 0);
+
         if !utf16 {
             return String::from_utf8_lossy(bytes).into_owned();
         }
 
         let body = bytes.strip_prefix(&[0xFF, 0xFE]).unwrap_or(bytes);
-        let units: Vec<u16> = body.chunks_exact(2).map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect();
+
+        let units: Vec<u16> = body
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .collect();
+
         String::from_utf16_lossy(&units)
     }
 
     /// Mengambil teks dari toast. Baris pertama adalah pengirim, sisanya isi pesan.
     fn parse_toast(xml: &str, source: &Source) -> Option<MessageNotice> {
         let texts = extract_texts(xml);
+
         let (sender, body) = match texts.as_slice() {
             [] => return None,
             [only] => (source.name.to_string(), only.clone()),
@@ -323,7 +502,10 @@ mod windows_source {
                 continue;
             }
 
-            let Some(tag_end) = rest.find('>') else { break };
+            let Some(tag_end) = rest.find('>') else {
+                break;
+            };
+
             let attributes = &rest[..tag_end];
             rest = &rest[tag_end + 1..];
 
@@ -331,7 +513,10 @@ mod windows_source {
                 continue; // <text ... />
             }
 
-            let Some(close) = rest.find("</text>") else { break };
+            let Some(close) = rest.find("</text>") else {
+                break;
+            };
+
             let content = &rest[..close];
             rest = &rest[close + "</text>".len()..];
 
@@ -340,6 +525,7 @@ mod windows_source {
             }
 
             let value = unescape(content).trim().to_string();
+
             if !value.is_empty() {
                 texts.push(value);
             }
@@ -363,6 +549,7 @@ mod windows_source {
             };
 
             let entity = &rest[1..semi];
+
             let decoded = match entity {
                 "amp" => Some('&'),
                 "lt" => Some('<'),
@@ -372,7 +559,11 @@ mod windows_source {
                 _ => entity
                     .strip_prefix("#x")
                     .and_then(|hex| u32::from_str_radix(hex, 16).ok())
-                    .or_else(|| entity.strip_prefix('#').and_then(|number| number.parse().ok()))
+                    .or_else(|| {
+                        entity
+                            .strip_prefix('#')
+                            .and_then(|number| number.parse().ok())
+                    })
                     .and_then(char::from_u32),
             };
 
@@ -399,16 +590,30 @@ mod windows_source {
         #[test]
         fn reads_sender_and_message_from_a_toast() {
             let xml = r#"<toast><visual><binding template="ToastGeneric"><text>Budi</text><text>Halo &amp; selamat pagi</text><text placement="attribution">WhatsApp</text></binding></visual></toast>"#;
+
             let notice = parse_toast(xml, &SOURCES[0]).expect("toast terbaca");
+
             assert_eq!(notice.sender, "Budi");
             assert_eq!(notice.body, "Halo & selamat pagi");
         }
 
         #[test]
         fn recognises_apps_by_name_or_by_website() {
-            assert_eq!(find_source("5319275A.WhatsAppDesktop_x!App", "").map(|s| s.id), Some("whatsapp"));
-            assert_eq!(find_source("Chrome", "<text>www.instagram.com</text>").map(|s| s.id), Some("instagram"));
-            assert_eq!(find_source("Chrome", "<text>web.whatsapp.com</text>").map(|s| s.id), Some("whatsapp"));
+            assert_eq!(
+                find_source("5319275A.WhatsAppDesktop_x!App", "").map(|s| s.id),
+                Some("whatsapp")
+            );
+
+            assert_eq!(
+                find_source("Chrome", "<text>www.instagram.com</text>").map(|s| s.id),
+                Some("instagram")
+            );
+
+            assert_eq!(
+                find_source("Chrome", "<text>web.whatsapp.com</text>").map(|s| s.id),
+                Some("whatsapp")
+            );
+
             assert!(find_source("Chrome", "<text>example.com</text>").is_none());
         }
 
@@ -420,7 +625,9 @@ mod windows_source {
         /// Database contoh dengan skema yang sama dengan wpndatabase.db (hanya kolom yang dibaca).
         fn make_source_db(dir: &Path, rows: &[(i64, &str)]) {
             fs::create_dir_all(dir).unwrap();
+
             let connection = Connection::open(dir.join(DB_FILES[0])).unwrap();
+
             connection
                 .execute_batch(
                     "CREATE TABLE NotificationHandler (RecordId INTEGER PRIMARY KEY, PrimaryId TEXT);
@@ -428,29 +635,55 @@ mod windows_source {
                      INSERT INTO NotificationHandler VALUES (1, 'WhatsAppDesktop');",
                 )
                 .unwrap();
+
             for (id, xml) in rows {
-                connection.execute("INSERT INTO Notification VALUES (?1, 1, ?2)", params![id, xml.as_bytes()]).unwrap();
+                connection
+                    .execute(
+                        "INSERT INTO Notification VALUES (?1, 1, ?2)",
+                        params![id, xml.as_bytes()],
+                    )
+                    .unwrap();
             }
         }
 
         fn scratch_dir(tag: &str) -> PathBuf {
-            let nanos = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_nanos();
-            std::env::temp_dir().join(format!("notchboo-test-{tag}-{}-{nanos}", std::process::id()))
+            let nanos = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+
+            std::env::temp_dir().join(format!(
+                "notchboo-test-{tag}-{}-{nanos}",
+                std::process::id()
+            ))
         }
 
         #[test]
         fn snapshot_reads_new_rows_and_removes_the_copy() {
             let root = scratch_dir("ok");
             let (source, copy) = (root.join("src"), root.join("copy"));
+
             let toast = "<toast><text>Budi</text><text>Halo</text></toast>";
+
             make_source_db(&source, &[(1, toast), (2, toast)]);
 
             // Pembacaan pertama: hanya titik awal.
-            assert!(matches!(read_snapshot(&source, &copy, None), Ok(Snapshot::Baseline(2))));
+            assert!(matches!(
+                read_snapshot(&source, &copy, None),
+                Ok(Snapshot::Baseline(2))
+            ));
+
             assert!(!copy.exists(), "salinan harus dihapus");
 
             // Notifikasi baru setelah titik awal.
-            Connection::open(source.join(DB_FILES[0])).unwrap().execute("INSERT INTO Notification VALUES (3, 1, ?1)", params![toast.as_bytes()]).unwrap();
+            Connection::open(source.join(DB_FILES[0]))
+                .unwrap()
+                .execute(
+                    "INSERT INTO Notification VALUES (3, 1, ?1)",
+                    params![toast.as_bytes()],
+                )
+                .unwrap();
+
             match read_snapshot(&source, &copy, Some(2)) {
                 Ok(Snapshot::New { notices, newest }) => {
                     assert_eq!(newest, 3);
@@ -459,6 +692,7 @@ mod windows_source {
                 }
                 _ => panic!("harus membaca satu notifikasi baru"),
             }
+
             assert!(!copy.exists(), "salinan harus dihapus");
 
             let _ = fs::remove_dir_all(&root);
@@ -475,7 +709,12 @@ mod windows_source {
 
             // Skema tidak dikenali.
             fs::create_dir_all(&source).unwrap();
-            Connection::open(source.join(DB_FILES[0])).unwrap().execute_batch("CREATE TABLE Other (x INTEGER);").unwrap();
+
+            Connection::open(source.join(DB_FILES[0]))
+                .unwrap()
+                .execute_batch("CREATE TABLE Other (x INTEGER);")
+                .unwrap();
+
             assert!(read_snapshot(&source, &copy, None).is_err());
             assert!(!copy.exists());
 
@@ -484,7 +723,11 @@ mod windows_source {
 
         #[test]
         fn decodes_utf16_payloads() {
-            let bytes: Vec<u8> = "<text>Hi</text>".encode_utf16().flat_map(u16::to_le_bytes).collect();
+            let bytes: Vec<u8> = "<text>Hi</text>"
+                .encode_utf16()
+                .flat_map(u16::to_le_bytes)
+                .collect();
+
             assert_eq!(decode(&bytes), "<text>Hi</text>");
         }
     }
