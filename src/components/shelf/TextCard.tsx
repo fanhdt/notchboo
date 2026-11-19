@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { formatDate, shelf, type Expiry, type ShelfItem } from "../../lib/shelf";
 import IconButton from "./IconButton";
@@ -24,11 +24,20 @@ export default function TextCard({ item, onEdit, onTogglePin, onSetExpiry, onDel
   const [fullBody, setFullBody] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const loadRequest = useRef(0);
+
   useEffect(() => {
+    // Batalkan hak request sebelumnya ketika item berubah atau komponen dilepas.
+    loadRequest.current += 1;
+
     setFullBody(null);
     setExpanded(false);
     setLoadError(null);
-  }, [item.updatedAt]);
+
+    return () => {
+      loadRequest.current += 1;
+    };
+  }, [item.id, item.updatedAt]);
 
   async function toggleExpanded() {
     if (expanded) {
@@ -40,11 +49,18 @@ export default function TextCard({ item, onEdit, onTogglePin, onSetExpiry, onDel
 
     if (fullBody !== null) return;
 
+    const request = ++loadRequest.current;
+
     try {
       const full = await shelf.get(item.id);
+
+      if (request !== loadRequest.current) return;
+
       setFullBody((full.body ?? "").trim());
       setLoadError(null);
     } catch (reason) {
+      if (request !== loadRequest.current) return;
+
       setLoadError(reason instanceof Error ? reason.message : String(reason));
     }
   }

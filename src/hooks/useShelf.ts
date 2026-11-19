@@ -48,6 +48,17 @@ export function useShelfItems(kind: ItemKind, query: string, pinnedOnly: boolean
 
   const debouncedQuery = useDebounced(query, 200);
   const latestRequest = useRef(0);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+
+    return () => {
+      mounted.current = false;
+      // Membatalkan hak request yang masih berjalan untuk mengubah state.
+      latestRequest.current += 1;
+    };
+  }, []);
 
   const refresh = useCallback(async () => {
     const request = ++latestRequest.current;
@@ -59,16 +70,16 @@ export function useShelfItems(kind: ItemKind, query: string, pinnedOnly: boolean
         pinnedOnly,
       });
 
-      if (request !== latestRequest.current) return;
+      if (!mounted.current || request !== latestRequest.current) return;
 
       setItems(result);
       setError(null);
     } catch (reason) {
-      if (request === latestRequest.current) {
+      if (mounted.current && request === latestRequest.current) {
         setError(messageOf(reason));
       }
     } finally {
-      if (request === latestRequest.current) {
+      if (mounted.current && request === latestRequest.current) {
         setLoading(false);
       }
     }
@@ -94,12 +105,18 @@ export function useShelfItems(kind: ItemKind, query: string, pinnedOnly: boolean
       try {
         await work();
 
-        setActionError(null);
+        if (mounted.current) {
+          setActionError(null);
+        }
+
         await refresh();
 
         return true;
       } catch (reason) {
-        setActionError(messageOf(reason));
+        if (mounted.current) {
+          setActionError(messageOf(reason));
+        }
+
         return false;
       }
     },
@@ -273,35 +290,57 @@ export function useShelfImport(onImported: () => void): UseShelfImport {
   const [error, setError] = useState<string | null>(null);
 
   const onImportedRef = useRef(onImported);
+  const activeRef = useRef(true);
+  const runningRef = useRef(false);
+
   onImportedRef.current = onImported;
 
   useEffect(() => {
+    activeRef.current = true;
     let stop: (() => void) | undefined;
     let cancelled = false;
 
-    onImportProgress(setProgress)
+    onImportProgress((value) => {
+      if (!activeRef.current || cancelled) return;
+      setProgress(value);
+    })
       .then((unlisten) => {
-        if (cancelled) {
+        if (cancelled || !activeRef.current) {
           unlisten();
         } else {
           stop = unlisten;
         }
       })
-      .catch(console.error);
+      .catch((reason) => {
+        if (activeRef.current) {
+          console.error("Gagal memasang listener progres impor:", reason);
+        }
+      });
 
     return () => {
       cancelled = true;
+      activeRef.current = false;
       stop?.();
     };
   }, []);
 
   const run = useCallback(async (work: () => Promise<ImportOutcome>) => {
-    setImporting(true);
-    setError(null);
-    setSkipped([]);
+    // Hindari impor ganda dari klik atau drag-and-drop yang berdekatan.
+    if (runningRef.current) return;
+
+    runningRef.current = true;
+
+    if (activeRef.current) {
+      setImporting(true);
+      setError(null);
+      setSkipped([]);
+      setProgress(null);
+    }
 
     try {
       const outcome = await work();
+
+      if (!activeRef.current) return;
 
       setSkipped(outcome.skipped);
 
@@ -309,10 +348,16 @@ export function useShelfImport(onImported: () => void): UseShelfImport {
         onImportedRef.current();
       }
     } catch (reason) {
-      setError(messageOf(reason));
+      if (activeRef.current) {
+        setError(messageOf(reason));
+      }
     } finally {
-      setImporting(false);
-      setProgress(null);
+      runningRef.current = false;
+
+      if (activeRef.current) {
+        setImporting(false);
+        setProgress(null);
+      }
     }
   }, []);
 
@@ -346,6 +391,8 @@ export function useFileDrop(onDrop: (paths: string[]) => void): boolean {
 
     getCurrentWebview()
       .onDragDropEvent((event) => {
+        if (cancelled) return;
+
         const payload = event.payload;
 
         if (payload.type === "enter" || payload.type === "over") {
@@ -367,7 +414,11 @@ export function useFileDrop(onDrop: (paths: string[]) => void): boolean {
           stop = unlisten;
         }
       })
-      .catch(console.error);
+      .catch((reason) => {
+        if (!cancelled) {
+          console.error("Gagal memasang listener drag-and-drop:", reason);
+        }
+      });
 
     return () => {
       cancelled = true;

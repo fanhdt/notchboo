@@ -23,7 +23,9 @@ export default function TextEditor({ kind, initial, error, onSave, onClose }: Pr
   const [body, setBody] = useState(initial?.body ?? "");
   const [language, setLanguage] = useState(initial?.language ?? "");
   const [saving, setSaving] = useState(false);
+
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const savingRef = useRef(false);
 
   const isSnippet = kind === "snippet";
   const canSave = !saving && (title.trim() !== "" || body.trim() !== "");
@@ -33,11 +35,29 @@ export default function TextEditor({ kind, initial, error, onSave, onClose }: Pr
   }, []);
 
   async function save() {
-    if (!canSave) return;
+    // Ref mencegah pemanggilan ganda sebelum React sempat render ulang.
+    if (savingRef.current || !canSave) return;
+
+    savingRef.current = true;
     setSaving(true);
-    const ok = await onSave({ title, body, language: isSnippet ? language : null });
-    setSaving(false);
-    if (ok) onClose();
+
+    try {
+      const ok = await onSave({
+        title,
+        body,
+        language: isSnippet ? language : null,
+      });
+
+      if (ok) onClose();
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
+
+  function close() {
+    if (savingRef.current) return;
+    onClose();
   }
 
   return (
@@ -47,8 +67,10 @@ export default function TextEditor({ kind, initial, error, onSave, onClose }: Pr
       aria-modal="true"
       aria-label={initial ? COPY[kind].edit : COPY[kind].new}
       onKeyDown={(event) => {
-        if (event.key === "Escape") onClose();
-        else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          close();
+        } else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
           event.preventDefault();
           void save();
         }
@@ -67,8 +89,10 @@ export default function TextEditor({ kind, initial, error, onSave, onClose }: Pr
             placeholder="Judul (opsional)"
             maxLength={200}
             aria-label="Judul"
-            className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white placeholder:text-white/35 focus:border-accent/50 focus:outline-none"
+            disabled={saving}
+            className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white placeholder:text-white/35 focus:border-accent/50 focus:outline-none disabled:opacity-60"
           />
+
           {isSnippet && (
             <input
               value={language}
@@ -76,7 +100,8 @@ export default function TextEditor({ kind, initial, error, onSave, onClose }: Pr
               placeholder="Bahasa"
               maxLength={32}
               aria-label="Bahasa"
-              className="h-9 w-28 rounded-lg border border-white/10 bg-white/5 px-3 font-mono text-xs text-white placeholder:text-white/35 focus:border-accent/50 focus:outline-none"
+              disabled={saving}
+              className="h-9 w-28 rounded-lg border border-white/10 bg-white/5 px-3 font-mono text-xs text-white placeholder:text-white/35 focus:border-accent/50 focus:outline-none disabled:opacity-60"
             />
           )}
         </div>
@@ -88,7 +113,8 @@ export default function TextEditor({ kind, initial, error, onSave, onClose }: Pr
           placeholder={COPY[kind].bodyPlaceholder}
           aria-label="Isi"
           spellCheck={!isSnippet}
-          className={`min-h-0 flex-1 resize-none rounded-lg border border-white/10 bg-white/5 p-3 text-sm leading-relaxed text-white placeholder:text-white/35 focus:border-accent/50 focus:outline-none ${
+          disabled={saving}
+          className={`min-h-0 flex-1 resize-none rounded-lg border border-white/10 bg-white/5 p-3 text-sm leading-relaxed text-white placeholder:text-white/35 focus:border-accent/50 focus:outline-none disabled:opacity-60 ${
             isSnippet ? "font-mono text-xs" : ""
           }`}
         />
@@ -97,9 +123,10 @@ export default function TextEditor({ kind, initial, error, onSave, onClose }: Pr
       </div>
 
       <div className="flex justify-end gap-2 border-t border-white/5 px-3 py-3">
-        <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-xs text-white/70 hover:bg-white/10">
+        <button type="button" onClick={close} disabled={saving} className="rounded-lg px-4 py-2 text-xs text-white/70 hover:bg-white/10 disabled:cursor-default disabled:opacity-40">
           Batal
         </button>
+
         <button type="button" onClick={() => void save()} disabled={!canSave} className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-40">
           {saving ? "Menyimpan…" : "Simpan"}
         </button>

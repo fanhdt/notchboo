@@ -19,19 +19,56 @@ export type SystemStats = {
 /**
  * Sampel sistem dari Rust, hanya selama komponen yang memakainya terpasang.
  *
- * Memasang hook ini menyalakan monitoring di Rust, melepasnya mematikan lagi. Karena state-nya
- * lokal, sampel yang datang tiap detik hanya me-render komponen pemakainya, bukan seluruh island.
+ * Listener didaftarkan sebelum monitoring dinyalakan agar sampel pertama tidak terlewat.
+ * Cleanup menangani listener yang belum selesai didaftarkan dan memastikan monitoring
+ * kembali mati jika proses inisialisasi selesai setelah komponen dilepas.
+ *
  * `null` sampai sampel pertama tiba.
  */
 export function useSystemStats(): SystemStats | null {
   const [stats, setStats] = useState<SystemStats | null>(null);
 
   useEffect(() => {
-    const unlisten = listen<SystemStats>("system-stats", (event) => setStats(event.payload));
-    invoke("set_monitoring", { enabled: true }).catch(console.error);
+    let active = true;
+    let unlisten: (() => void) | null = null;
+
+    const initialize = async () => {
+      try {
+        const stop = await listen<SystemStats>("system-stats", (event) => {
+          if (!active) return;
+          setStats(event.payload);
+        });
+
+        // Komponen mungkin sudah dilepas ketika listener selesai didaftarkan.
+        if (!active) {
+          stop();
+          return;
+        }
+
+        unlisten = stop;
+
+        // Nyalakan monitoring hanya setelah listener siap.
+        await invoke("set_monitoring", { enabled: true });
+
+        // Pastikan monitoring mati jika cleanup terjadi ketika invoke masih berjalan.
+        if (!active) {
+          await invoke("set_monitoring", { enabled: false });
+        }
+      } catch (error) {
+        if (active) {
+          console.error("Gagal menginisialisasi system monitoring:", error);
+        }
+      }
+    };
+
+    void initialize();
 
     return () => {
-      unlisten.then((stop) => stop());
+      active = false;
+
+      unlisten?.();
+      unlisten = null;
+
       invoke("set_monitoring", { enabled: false }).catch(console.error);
     };
   }, []);
