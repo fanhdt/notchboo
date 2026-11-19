@@ -59,7 +59,7 @@ export default function TasksPage() {
   }
 
   return (
-    <div className="flex h-full flex-col bg-[#111113] text-white/90" style={{ colorScheme: "dark" }}>
+    <div className="flex h-full flex-col bg-surface text-white/90" style={{ colorScheme: "dark" }}>
       <TasksTitleBar categoriesOpen={categoriesOpen} onToggleCategories={() => setCategoriesOpen((open) => !open)} />
 
       {categoriesOpen ? (
@@ -73,7 +73,7 @@ export default function TasksPage() {
 
           <div className="flex items-baseline justify-between px-4 pb-1 pt-4">
             <h2 className="text-sm font-semibold capitalize text-white">{selected === today ? `Hari ini · ${formatLongDate(selected)}` : formatLongDate(selected)}</h2>
-            <span className="text-[11px] text-white/45">{openCount} tersisa</span>
+            <span className="text-caption text-white/45">{openCount} tersisa</span>
           </div>
 
           <main className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
@@ -106,7 +106,7 @@ export default function TasksPage() {
               <button
                 type="button"
                 onClick={() => setEditing("new")}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#c8e63c] py-2.5 text-sm font-semibold text-black transition-opacity hover:opacity-90 active:opacity-75"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-2.5 text-sm font-semibold text-black transition-opacity hover:opacity-90 active:opacity-75"
               >
                 <Icon name="add" className="h-4 w-4" />
                 Tugas baru

@@ -10,7 +10,7 @@ export function TasksTitleBar({ categoriesOpen, onToggleCategories }: { categori
 
   return (
     <header data-tauri-drag-region className="flex h-11 shrink-0 select-none items-center gap-2 border-b border-white/5 pl-4 pr-2">
-      <span className="pointer-events-none text-[#c8e63c]">
+      <span className="pointer-events-none text-accent">
         <Icon name="check" className="h-4 w-4" />
       </span>
       <h1 className="pointer-events-none flex-1 text-sm font-semibold tracking-tight text-white">Tugas</h1>
@@ -43,7 +43,7 @@ export function WeekStrip({ selected, today, tasks, onSelect }: WeekProps) {
         </span>
         <div className="flex items-center gap-1">
           {!currentWeek && (
-            <button type="button" onClick={() => onSelect(today)} className="rounded-md px-2 py-1 text-[11px] text-[#c8e63c] transition-colors hover:bg-white/5">
+            <button type="button" onClick={() => onSelect(today)} className="rounded-md px-2 py-1 text-caption  text-accent transition-colors hover:bg-white/5">
               Hari ini
             </button>
           )}
@@ -68,7 +68,7 @@ export function WeekStrip({ selected, today, tasks, onSelect }: WeekProps) {
               className={`flex flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 transition-colors ${active ? "bg-white/12 text-white" : "text-white/55 hover:bg-white/5 hover:text-white"}`}
             >
               <span className="text-[10px] uppercase tracking-wide">{DAY_SHORT[date.getDay()]}</span>
-              <span className={`flex h-6 w-6 items-center justify-center rounded-full text-sm font-semibold ${isToday ? "bg-[#c8e63c] text-black" : ""}`}>{date.getDate()}</span>
+              <span className={`flex h-6 w-6 items-center justify-center rounded-full text-sm font-semibold ${isToday ? "bg-accent text-black" : ""}`}>{date.getDate()}</span>
               <span className={`h-1 w-1 rounded-full ${open > 0 ? "bg-white/60" : "bg-transparent"}`} aria-hidden="true" />
               {open > 0 && <span className="sr-only">{open} tugas tersisa</span>}
             </button>

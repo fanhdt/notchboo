@@ -49,7 +49,7 @@ export default function CategoryManager({ categories, tasks, onAdd, onRemove }: 
           placeholder="Mis. Kuliah, Olahraga"
           maxLength={30}
           aria-label="Nama kategori"
-          className="h-9 rounded-lg border border-white/10 bg-white/5 px-2.5 text-sm text-white placeholder:text-white/35  focus:border-accent/50 focus:outline-none"
+          className="h-9 rounded-lg border border-white/10 bg-white/5 px-2.5 text-sm text-white placeholder:text-white/35 focus:border-accent/50 focus:outline-none"
         />
 
         <div className="flex items-center justify-between gap-2">

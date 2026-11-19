@@ -22,7 +22,7 @@ export default function TaskRow({ occurrence, category, onToggle, onEdit, onDele
         onClick={onToggle}
         aria-label={done ? "Tandai belum selesai" : "Tandai selesai"}
         aria-pressed={done}
-        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors ${done ? "border-[#c8e63c] bg-[#c8e63c] text-black" : "border-white/35 hover:border-white"}`}
+        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors ${done ? "border-accent bg-accent text-black" : "border-white/35 hover:border-white"}`}
       >
         {done && <Icon name="check" className="h-3.5 w-3.5" />}
       </button>
@@ -30,7 +30,7 @@ export default function TaskRow({ occurrence, category, onToggle, onEdit, onDele
       <button type="button" onClick={onEdit} title="Ubah tugas" className="min-w-0 flex-1 text-left">
         <span className={`block truncate text-sm ${done ? "text-white/35 line-through" : "text-white"}`}>{task.title}</span>
 
-        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-white/45">
+        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-caption text-white/45">
           {category && (
             <span className="flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: category.color }} />
