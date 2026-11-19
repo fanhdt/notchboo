@@ -109,9 +109,35 @@ export function useIslandController() {
 
   // 1. Posisi kursor dari Rust.
   useEffect(() => {
-    const unlisten = listen<Presence>("cursor-presence", (event) => setPresence(event.payload));
+    let active = true;
+    let unlisten: (() => void) | undefined;
+
+    const initialize = async () => {
+      try {
+        const stopListening = await listen<Presence>("cursor-presence", (event) => {
+          if (active) {
+            setPresence(event.payload);
+          }
+        });
+
+        if (!active) {
+          stopListening();
+          return;
+        }
+
+        unlisten = stopListening;
+      } catch (error) {
+        if (active) {
+          console.error("Gagal memasang listener posisi kursor:", error);
+        }
+      }
+    };
+
+    void initialize();
+
     return () => {
-      unlisten.then((stop) => stop());
+      active = false;
+      unlisten?.();
     };
   }, []);
 
@@ -150,8 +176,8 @@ export function useIslandController() {
     let unlistenPlayback: (() => void) | undefined;
 
     const initialize = async () => {
+      // Registrasi listener media dilakukan secara independen.
       try {
-        // Pasang listener media sebelum mengambil snapshot awal.
         const stopListeningMedia = await listen<MediaInfo | null>("media-changed", (event) => {
           mediaEventReceived = true;
 
@@ -166,8 +192,16 @@ export function useIslandController() {
         }
 
         unlistenMedia = stopListeningMedia;
+      } catch (error) {
+        if (active) {
+          console.error("Gagal memasang listener media:", error);
+        }
+      }
 
-        // Pasang listener playback sebelum mengambil snapshot awal.
+      if (!active) return;
+
+      // Kegagalan listener media tidak menghalangi registrasi playback.
+      try {
         const stopListeningPlayback = await listen<PlaybackInfo | null>("playback-changed", (event) => {
           playbackEventReceived = true;
 
@@ -182,31 +216,33 @@ export function useIslandController() {
         }
 
         unlistenPlayback = stopListeningPlayback;
-
-        // Ambil kedua snapshot secara independen agar kegagalan salah satunya
-        // tidak menghalangi data awal yang lain.
-        const [mediaResult, playbackResult] = await Promise.allSettled([invoke<MediaInfo | null>("get_media_info"), invoke<PlaybackInfo | null>("get_playback_info")]);
-
-        if (!active) return;
-
-        if (!mediaEventReceived) {
-          if (mediaResult.status === "fulfilled") {
-            setMedia(mediaResult.value);
-          } else {
-            console.error("Gagal mengambil informasi media awal:", mediaResult.reason);
-          }
-        }
-
-        if (!playbackEventReceived) {
-          if (playbackResult.status === "fulfilled") {
-            setPlayback(stamp(playbackResult.value));
-          } else {
-            console.error("Gagal mengambil informasi playback awal:", playbackResult.reason);
-          }
-        }
       } catch (error) {
         if (active) {
-          console.error("Gagal menginisialisasi listener media:", error);
+          console.error("Gagal memasang listener playback:", error);
+        }
+      }
+
+      if (!active) return;
+
+      // Ambil kedua snapshot secara independen agar kegagalan salah satunya
+      // tidak menghalangi data awal yang lain.
+      const [mediaResult, playbackResult] = await Promise.allSettled([invoke<MediaInfo | null>("get_media_info"), invoke<PlaybackInfo | null>("get_playback_info")]);
+
+      if (!active) return;
+
+      if (!mediaEventReceived) {
+        if (mediaResult.status === "fulfilled") {
+          setMedia(mediaResult.value);
+        } else {
+          console.error("Gagal mengambil informasi media awal:", mediaResult.reason);
+        }
+      }
+
+      if (!playbackEventReceived) {
+        if (playbackResult.status === "fulfilled") {
+          setPlayback(stamp(playbackResult.value));
+        } else {
+          console.error("Gagal mengambil informasi playback awal:", playbackResult.reason);
         }
       }
     };
