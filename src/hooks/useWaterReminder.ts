@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /** @deprecated Target kini dalam ml (`goalMl`). Dipertahankan agar import lama tidak rusak. */
 export const WATER_GOAL = 8;
@@ -236,8 +236,9 @@ export function useWaterReminder(): WaterReminder {
       return next;
     });
   }, []);
-
   // Deteksi pergantian tanggal menggunakan jam lokal.
+  const dayRef = useRef(stored.day);
+
   useEffect(() => {
     const checkDay = () => {
       const timestamp = Date.now();
@@ -255,9 +256,16 @@ export function useWaterReminder(): WaterReminder {
         return next;
       });
 
-      setLastEventAt(timestamp);
-      setSnoozeUntil(null);
-      setDue(false);
+      // Reset jadwal hanya ketika tanggal benar-benar berubah.
+      // Pemeriksaan berkala dan visibility change tidak boleh
+      // mengulang jadwal atau membatalkan alarm yang sedang aktif.
+      if (day !== dayRef.current) {
+        dayRef.current = day;
+
+        setLastEventAt(timestamp);
+        setSnoozeUntil(null);
+        setDue(false);
+      }
     };
 
     const interval = window.setInterval(checkDay, TICK_MS);
