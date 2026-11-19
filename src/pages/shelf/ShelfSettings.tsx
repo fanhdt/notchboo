@@ -16,32 +16,38 @@ export default function ShelfSettings() {
     <div className="flex flex-col gap-4 p-3">
       <section>
         <h2 className="text-sm font-semibold text-white">Masa berlaku bawaan</h2>
+
         <p className="mt-1 text-xs leading-relaxed text-white/50">
           Berlaku untuk item baru. Item yang disematkan tidak pernah dihapus otomatis, dan item kedaluwarsa dibersihkan setiap jam. Masa berlaku item yang sudah ada bisa diubah satu per satu.
         </p>
 
-        <div role="radiogroup" aria-label="Masa berlaku bawaan" className="mt-3 flex flex-col gap-1.5">
+        <fieldset className="mt-3 flex flex-col gap-1.5">
+          <legend className="sr-only">Masa berlaku bawaan</legend>
+
           {EXPIRY_OPTIONS.map((option) => {
             const selected = settings.defaultExpiry === option;
+
             return (
-              <button
+              <label
                 key={option}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => void setDefaultExpiry(option)}
-                className={`flex items-center justify-between rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${selected ? "border-accent/50 bg-accent/10 text-white" : "border-white/10 text-white/70 hover:bg-white/5"}`}
+                className={`flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2.5 text-sm transition-colors ${
+                  selected ? "border-accent/50 bg-accent/10 text-white" : "border-white/10 text-white/70 hover:bg-white/5"
+                }`}
               >
-                {EXPIRY_LABEL[option]}
+                <input type="radio" name="default-expiry" value={option} checked={selected} onChange={() => void setDefaultExpiry(option)} className="sr-only" />
+
+                <span>{EXPIRY_LABEL[option]}</span>
+
                 {selected && <Icon name="check" className="h-4 w-4 text-accent" />}
-              </button>
+              </label>
             );
           })}
-        </div>
+        </fieldset>
 
-        <div className="mt-2 h-4 text-xs text-accent" role="status">
+        <div className="mt-2 h-4 text-xs text-accent" role="status" aria-live="polite">
           {saved ? "Tersimpan" : ""}
         </div>
+
         {error && <ErrorBanner message={error} />}
       </section>
     </div>

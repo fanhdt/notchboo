@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { AnimatePresence, motion, useSpring } from "motion/react";
 
-
-/** Warna Mocchi */
+/** Warna Mochi */
 export const MOCHI_CREAM = "#f6e7cb";
 const BLUSH = "#f2a7a0";
 const INK = "#3a2d2a";
@@ -131,7 +130,7 @@ type EyeProps = {
 };
 
 /**
- * Mata Mocchi.
+ * Mata Mochi.
  * Ukuran mata dibuat lebih besar, bulat, dan ekspresif.
  * Highlight putih memberikan kesan mata yang hidup.
  */
@@ -589,7 +588,7 @@ export default function Mochi({ peeking = false }: MochiProps) {
     <motion.svg
       viewBox="0 0 100 30"
       role="img"
-      aria-label="Mocchi"
+      aria-label="Mochi"
       className={`h-7 w-auto overflow-visible transition-transform duration-300 ${peeking ? "translate-y-1" : ""}`}
       style={{
         transformOrigin: "50% 100%",

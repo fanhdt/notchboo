@@ -53,8 +53,8 @@ export function useIslandController() {
   const [alerting, setAlerting] = useState(false);
 
   // Mode timer (Pomodoro / Flowmodoro) dan rasio istirahat Flow, diingat antar sesi.
-  const [mode, setModeState] = usePersistedChoice<TimerMode>("mocchi.timerMode", TIMER_MODES, "pomodoro");
-  const [flowRatio, setFlowRatio] = usePersistedChoice<FlowRatio>("mocchi.flowRatio", FLOW_RATIOS, 5);
+  const [mode, setModeState] = usePersistedChoice<TimerMode>(".timerMode", TIMER_MODES, "pomodoro");
+  const [flowRatio, setFlowRatio] = usePersistedChoice<FlowRatio>("mochi.flowRatio", FLOW_RATIOS, 5);
 
   // Pesan masuk (WhatsApp, Instagram): island membesar sebentar dan menampilkannya.
   const { notice, dismiss: dismissNotice } = useMessageNotice();

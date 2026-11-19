@@ -119,13 +119,15 @@ pub fn run() {
         if let RunEvent::Exit = event {
             // Hentikan seluruh worker yang memiliki mekanisme shutdown eksplisit.
             #[cfg(windows)]
-    foreground::stop_foreground_watcher();
+            {
+                foreground::stop_foreground_watcher();
+                media::stop_media_watcher();
+            }
 
-    island::stop_cursor_watcher();
-    shelf::stop_maintenance();
-    monitor::stop_monitor(app_handle);
-    media::stop_media_watcher();
-    notifications::stop_notification_watcher();
+            island::stop_cursor_watcher();
+            shelf::stop_maintenance();
+            monitor::stop_monitor(app_handle);
+            notifications::stop_notification_watcher();
         }
     });
 }
