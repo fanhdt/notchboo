@@ -41,7 +41,10 @@ pub fn run() {
         // Harus plugin pertama: menjalankan aplikasi kedua kali (mis. setelah mulai-otomatis) tidak
         // membuka salinan baru. Island yang sudah berjalan tetap satu-satunya.
         .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
-        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(island::IslandShared::default())
@@ -63,6 +66,7 @@ pub fn run() {
                 // Satu thread untuk hover dan arah pandang Mochi (lihat island.rs).
                 island::start_cursor_watcher(app.handle(), main_window);
             }
+
             foreground::start_foreground_watcher(app.handle());
 
             // Pertama kali dijalankan: nyalakan mulai-otomatis (bisa dimatikan dari menu tray).
@@ -72,14 +76,16 @@ pub fn run() {
             if let Err(error) = tray::init(app.handle()) {
                 eprintln!("gagal membuat ikon tray: {error}");
             }
+
             media::start_media_watcher(app.handle());
             monitor::start_monitor(app.handle());
             notifications::start_notification_watcher(app.handle());
 
-            // Quick Shelf: gagal membuka database tidak boleh menjatuhkan island.
+            // Quick Shelf: gagal membuka database tidak boleh menjatuhkan aplikasi.
             // Kegagalannya disimpan di state dan dilaporkan oleh tiap command shelf.
             app.manage(shelf::init(app.handle()));
             shelf::start_maintenance(app.handle());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -115,8 +121,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|_app_handle, event| {
+    app.run(|app_handle, event| {
         if let RunEvent::Exit = event {
+            // Hentikan worker yang memiliki mekanisme shutdown eksplisit.
+            monitor::stop_monitor(app_handle);
             notifications::stop_notification_watcher();
         }
     });
