@@ -1,5 +1,7 @@
+
 use std::sync::mpsc::{self, Sender};
-use std::thread;
+use std::sync::{Mutex, OnceLock};
+use std::thread::{self, JoinHandle};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -23,6 +25,18 @@ const MEDIA_EVENT: &str = "media-changed";
 const PLAYBACK_EVENT: &str = "playback-changed";
 /// Batas ukuran artwork, melindungi dari alokasi memori yang tidak masuk akal.
 const MAX_ARTWORK_BYTES: u64 = 5_000_000;
+
+/// Mengelola satu worker media watcher.
+struct MediaWatcherWorker {
+    sender: Sender<Wake>,
+    handle: JoinHandle<()>,
+}
+
+static MEDIA_WATCHER: OnceLock<Mutex<Option<MediaWatcherWorker>>> = OnceLock::new();
+
+fn media_watcher() -> &'static Mutex<Option<MediaWatcherWorker>> {
+    MEDIA_WATCHER.get_or_init(|| Mutex::new(None))
+}
 
 /// Informasi lagu yang dikirim ke React.
 #[derive(Clone, Serialize)]
@@ -63,6 +77,8 @@ enum Wake {
     MediaChanged,
     /// Status putar atau posisi berubah.
     PlaybackChanged,
+    /// Aplikasi sedang ditutup.
+    Shutdown,
 }
 
 /// Rangkuman pesan yang menumpuk sejak thread terakhir tidur.
@@ -73,13 +89,17 @@ struct Pending {
 }
 
 impl Pending {
-    fn record(&mut self, wake: Wake) {
+    /// Mengembalikan true jika menerima sinyal shutdown.
+    fn record(&mut self, wake: Wake) -> bool {
         match wake {
             Wake::SessionChanged => self.session_changed = true,
             Wake::MediaChanged => self.media_changed = true,
-            // Perubahan playback selalu menghasilkan pembacaan playback; tidak perlu ditandai.
+            // Perubahan playback selalu menghasilkan pembacaan playback.
             Wake::PlaybackChanged => {}
+            Wake::Shutdown => return true,
         }
+
+        false
     }
 }
 
@@ -92,11 +112,66 @@ struct Subscription {
 }
 
 impl Subscription {
-    /// Melepas ketiga pendengar. Mengambil alih `self` karena setelah ini objeknya tidak berguna lagi.
+    /// Melepas ketiga pendengar.
     fn unsubscribe(self) {
         let _ = self.session.RemoveMediaPropertiesChanged(self.media_token);
         let _ = self.session.RemovePlaybackInfoChanged(self.playback_token);
         let _ = self.session.RemoveTimelinePropertiesChanged(self.timeline_token);
+    }
+}
+
+/// Pendengar level manager untuk pergantian sesi dan perubahan daftar sesi.
+struct ManagerSubscription {
+    manager: SessionManager,
+    current_token: i64,
+    sessions_token: i64,
+}
+
+impl ManagerSubscription {
+    fn subscribe(
+        manager: &SessionManager,
+        sender: &Sender<Wake>,
+    ) -> windows::core::Result<Self> {
+        let tx = sender.clone();
+        let on_current_changed =
+            TypedEventHandler::<SessionManager, CurrentSessionChangedEventArgs>::new(
+                move |_, _| {
+                    let _ = tx.send(Wake::SessionChanged);
+                    Ok(())
+                },
+            );
+
+        let current_token = manager.CurrentSessionChanged(&on_current_changed)?;
+
+        let tx = sender.clone();
+        let on_sessions_changed =
+            TypedEventHandler::<SessionManager, SessionsChangedEventArgs>::new(
+                move |_, _| {
+                    let _ = tx.send(Wake::SessionChanged);
+                    Ok(())
+                },
+            );
+
+        let sessions_token = match manager.SessionsChanged(&on_sessions_changed) {
+            Ok(token) => token,
+            Err(error) => {
+                let _ = manager.RemoveCurrentSessionChanged(current_token);
+                return Err(error);
+            }
+        };
+
+        Ok(Self {
+            manager: manager.clone(),
+            current_token,
+            sessions_token,
+        })
+    }
+
+    fn unsubscribe(self) {
+        let _ = self
+            .manager
+            .RemoveCurrentSessionChanged(self.current_token);
+        let _ = self.manager.RemoveSessionsChanged(self.sessions_token);
     }
 }
 
@@ -165,6 +240,7 @@ fn send_action(action: MediaAction) -> windows::core::Result<bool> {
         MediaAction::PlayPause => session.TryTogglePlayPauseAsync()?,
         MediaAction::Next => session.TrySkipNextAsync()?,
     };
+
     operation.join()
 }
 
@@ -217,6 +293,7 @@ fn read_playback_from(manager: &SessionManager) -> windows::core::Result<Option<
             position_ms += (now_unix_ms() - updated_at).max(0) as u64;
         }
     }
+
     if duration_ms > 0 {
         position_ms = position_ms.min(duration_ms);
     }
@@ -248,7 +325,13 @@ fn now_unix_ms() -> i64 {
 /// Membaca thumbnail lagu dan mengubahnya menjadi data URL.
 /// Gagal membaca gambar bukan masalah: kembalikan `None`, dan lagunya tetap tampil.
 fn read_artwork(properties: &MediaProperties) -> Option<String> {
-    let stream = properties.Thumbnail().ok()?.OpenReadAsync().ok()?.join().ok()?;
+    let stream = properties
+        .Thumbnail()
+        .ok()?
+        .OpenReadAsync()
+        .ok()?
+        .join()
+        .ok()?;
 
     let size = stream.Size().ok()?;
     if size == 0 || size > MAX_ARTWORK_BYTES {
@@ -279,68 +362,122 @@ fn guess_image_mime(bytes: &[u8]) -> &'static str {
 
 /// Menjalankan thread yang memantau perubahan media. Dipanggil sekali dari `setup`.
 pub fn start_media_watcher(app: &AppHandle) {
-    let app = app.clone();
+    let mut worker = media_watcher()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    thread::spawn(move || {
-        if let Err(error) = run_media_watcher(&app) {
-            eprintln!("media watcher berhenti: {error}");
+    // Jangan membuat worker kedua jika watcher sudah pernah dimulai.
+    if worker.is_some() {
+        return;
+    }
+
+    let app = app.clone();
+    let (sender, receiver) = mpsc::channel::<Wake>();
+    let worker_sender = sender.clone();
+
+    let handle = match thread::Builder::new()
+        .name("media-watcher".into())
+        .spawn(move || {
+            if let Err(error) = run_media_watcher(&app, receiver, &worker_sender) {
+                eprintln!("media watcher berhenti: {error}");
+            }
+        }) {
+        Ok(handle) => handle,
+        Err(error) => {
+            eprintln!("gagal menjalankan media watcher: {error}");
+            return;
         }
-    });
+    };
+
+    *worker = Some(MediaWatcherWorker { sender, handle });
 }
 
-fn run_media_watcher(app: &AppHandle) -> windows::core::Result<()> {
-    let (sender, receiver) = mpsc::channel::<Wake>();
+/// Menghentikan worker media watcher dan menunggu thread selesai.
+pub fn stop_media_watcher() {
+    let worker = media_watcher()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take();
+
+    if let Some(worker) = worker {
+        // Mengirim shutdown membangunkan receiver.recv().
+        let _ = worker.sender.send(Wake::Shutdown);
+
+        if worker.handle.join().is_err() {
+            eprintln!("media watcher berhenti dengan panic");
+        }
+    }
+}
+
+fn run_media_watcher(
+    app: &AppHandle,
+    receiver: mpsc::Receiver<Wake>,
+    sender: &Sender<Wake>,
+) -> windows::core::Result<()> {
     let manager = current_manager()?;
 
-    // Pendengar level manager: sesi aktif berganti.
-    let tx = sender.clone();
-    let on_current_changed =
-        TypedEventHandler::<SessionManager, CurrentSessionChangedEventArgs>::new(move |_, _| {
-            let _ = tx.send(Wake::SessionChanged);
-            Ok(())
-        });
-    manager.CurrentSessionChanged(&on_current_changed)?;
+    // Simpan token manager agar listener dapat dilepas saat worker selesai.
+    let manager_subscription = ManagerSubscription::subscribe(&manager, sender)?;
 
-    // Pendengar level manager: daftar sesi berubah (pemutar dibuka atau ditutup).
-    let tx = sender.clone();
-    let on_sessions_changed =
-        TypedEventHandler::<SessionManager, SessionsChangedEventArgs>::new(move |_, _| {
-            let _ = tx.send(Wake::SessionChanged);
-            Ok(())
-        });
-    manager.SessionsChanged(&on_sessions_changed)?;
-
-    let mut subscription = subscribe_to_current_session(&manager, &sender);
+    let mut subscription = subscribe_to_current_session(&manager, sender);
     emit_media(app, read_media_info_from(&manager));
-    emit_playback(app, read_playback_from(&manager));
+    emit_playback(app, read_playback_info_from(&manager));
 
-    // Tidur sampai ada pesan. Tidak ada pekerjaan sama sekali selama media tidak berubah.
-    while let Ok(first) = receiver.recv() {
-        // Gabungkan pesan yang menumpuk, supaya satu rentetan event menghasilkan satu pembacaan.
+    // Tidur sampai ada pesan atau sinyal shutdown.
+    loop {
+        let first = match receiver.recv() {
+            Ok(wake) => wake,
+            Err(_) => break,
+        };
+
         let mut pending = Pending::default();
-        pending.record(first);
-        while let Ok(next) = receiver.try_recv() {
-            pending.record(next);
+        let mut shutdown = pending.record(first);
+
+        // Gabungkan pesan yang menumpuk, supaya satu rentetan event menghasilkan satu pembacaan.
+        while !shutdown {
+            match receiver.try_recv() {
+                Ok(wake) => shutdown = pending.record(wake),
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    shutdown = true;
+                }
+            }
+        }
+
+        if shutdown {
+            break;
         }
 
         if pending.session_changed {
             if let Some(old) = subscription.take() {
                 old.unsubscribe();
             }
-            subscription = subscribe_to_current_session(&manager, &sender);
+
+            subscription = subscribe_to_current_session(&manager, sender);
         }
 
         // Artwork hanya dibaca ulang jika lagunya memang berganti.
         if pending.session_changed || pending.media_changed {
             emit_media(app, read_media_info_from(&manager));
         }
-        emit_playback(app, read_playback_from(&manager));
+
+        emit_playback(app, read_playback_info_from(&manager));
     }
+
+    // Lepaskan listener sebelum keluar dari worker.
+    if let Some(active) = subscription.take() {
+        active.unsubscribe();
+    }
+
+    manager_subscription.unsubscribe();
 
     Ok(())
 }
 
 /// Memasang tiga pendengar di sesi yang sedang aktif.
+///
+/// Jika pemasangan listener berikutnya gagal, listener yang sudah terpasang
+/// sebelumnya langsung dilepas agar tidak tertinggal.
 fn subscribe_to_current_session(
     manager: &SessionManager,
     sender: &Sender<Wake>,
@@ -348,18 +485,29 @@ fn subscribe_to_current_session(
     let session = manager.GetCurrentSession().ok()?;
 
     let tx = sender.clone();
-    let on_media = TypedEventHandler::<Session, MediaPropertiesChangedEventArgs>::new(move |_, _| {
-        let _ = tx.send(Wake::MediaChanged);
-        Ok(())
-    });
+    let on_media =
+        TypedEventHandler::<Session, MediaPropertiesChangedEventArgs>::new(move |_, _| {
+            let _ = tx.send(Wake::MediaChanged);
+            Ok(())
+        });
+
     let media_token = session.MediaPropertiesChanged(&on_media).ok()?;
 
     let tx = sender.clone();
-    let on_playback = TypedEventHandler::<Session, PlaybackInfoChangedEventArgs>::new(move |_, _| {
-        let _ = tx.send(Wake::PlaybackChanged);
-        Ok(())
-    });
-    let playback_token = session.PlaybackInfoChanged(&on_playback).ok()?;
+    let on_playback =
+        TypedEventHandler::<Session, PlaybackInfoChangedEventArgs>::new(move |_, _| {
+            let _ = tx.send(Wake::PlaybackChanged);
+            Ok(())
+        });
+
+    let playback_token = match session.PlaybackInfoChanged(&on_playback) {
+        Ok(token) => token,
+        Err(error) => {
+            let _ = session.RemoveMediaPropertiesChanged(media_token);
+            eprintln!("gagal memasang playback listener: {error}");
+            return None;
+        }
+    };
 
     let tx = sender.clone();
     let on_timeline =
@@ -367,7 +515,16 @@ fn subscribe_to_current_session(
             let _ = tx.send(Wake::PlaybackChanged);
             Ok(())
         });
-    let timeline_token = session.TimelinePropertiesChanged(&on_timeline).ok()?;
+
+    let timeline_token = match session.TimelinePropertiesChanged(&on_timeline) {
+        Ok(token) => token,
+        Err(error) => {
+            let _ = session.RemoveMediaPropertiesChanged(media_token);
+            let _ = session.RemovePlaybackInfoChanged(playback_token);
+            eprintln!("gagal memasang timeline listener: {error}");
+            return None;
+        }
+    };
 
     Some(Subscription {
         session,
@@ -382,6 +539,7 @@ fn emit_media(app: &AppHandle, info: windows::core::Result<Option<MediaInfo>>) {
         eprintln!("gagal membaca media: {error}");
         None
     });
+
     // Gagal mengirim satu event bukan masalah fatal.
     let _ = app.emit(MEDIA_EVENT, payload);
 }
@@ -391,6 +549,7 @@ fn emit_playback(app: &AppHandle, info: windows::core::Result<Option<PlaybackInf
         eprintln!("gagal membaca playback: {error}");
         None
     });
+
     let _ = app.emit(PLAYBACK_EVENT, payload);
 }
 

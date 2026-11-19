@@ -125,6 +125,7 @@ pub fn run() {
         if let RunEvent::Exit = event {
             // Hentikan worker yang memiliki mekanisme shutdown eksplisit.
             monitor::stop_monitor(app_handle);
+            media::stop_media_watcher();
             notifications::stop_notification_watcher();
         }
     });
