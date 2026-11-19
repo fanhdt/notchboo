@@ -14,6 +14,7 @@ export function useIslandGeometry(controller: IslandController, geometry: Island
   const { state, view, layout, noticeOn, peeking } = controller;
 
   const target = noticeOn ? geometry.notice : state === "compact" ? geometry.compact : view === "media" ? geometry.expanded.media[layout] : geometry.expanded[view];
+
   const targetW = target.width;
   const targetH = target.height;
 
@@ -26,18 +27,58 @@ export function useIslandGeometry(controller: IslandController, geometry: Island
   const ear = useMotionValue<number>(geometry.shape.compact.ear);
   const peekY = useIslandPeek(peeking, geometry.compact.height);
 
-  // Sinkronisasi ukuran hitbox dengan Rust.
+  // Sinkronisasi hitbox dan animasi ukuran/bentuk.
   useEffect(() => {
-    invoke("set_island_hitbox", { width: targetW, height: hitboxH }).catch(console.error);
-  }, [targetW, hitboxH]);
+    let cancelled = false;
+    let stopAnimations: (() => void) | undefined;
 
-  // Animasi ukuran dan bentuk.
-  useEffect(() => {
+    const currentW = w.get();
+    const currentH = h.get();
+
+    // Selama transisi, gunakan area yang mencakup ukuran saat ini dan ukuran tujuan.
+    // Saat peek aktif, tinggi hitbox tetap dibatasi ke bagian yang terlihat.
+    const transitionHitbox = {
+      width: Math.max(currentW, targetW),
+      height: peeking ? PEEK_VISIBLE_PX : Math.max(currentH, targetH),
+    };
+
     const shape = geometry.shape[noticeOn ? "expanded" : state];
     const spring = noticeOn ? geometry.noticeSpring : geometry.spring;
-    const controls = [animate(w, targetW, spring), animate(h, targetH, spring), animate(radius, shape.radius, spring), animate(ear, shape.ear, spring)];
-    return () => controls.forEach((control) => control.stop());
-  }, [geometry, state, noticeOn, targetW, targetH, w, h, radius, ear]);
+
+    const startAnimation = async () => {
+      // Pastikan hitbox transisi sudah diterapkan sebelum animasi dimulai.
+      try {
+        await invoke("set_island_hitbox", transitionHitbox);
+      } catch (error) {
+        console.error("Gagal memperbarui hitbox transisi:", error);
+      }
+
+      if (cancelled) return;
+
+      const controls = [animate(w, targetW, spring), animate(h, targetH, spring), animate(radius, shape.radius, spring), animate(ear, shape.ear, spring)];
+
+      stopAnimations = () => controls.forEach((control) => control.stop());
+
+      await Promise.all(controls.map((control) => control.finished));
+
+      if (cancelled) return;
+
+      // Setelah animasi selesai, rapatkan hitbox ke ukuran akhirnya.
+      invoke("set_island_hitbox", {
+        width: targetW,
+        height: hitboxH,
+      }).catch((error) => {
+        console.error("Gagal memperbarui hitbox akhir:", error);
+      });
+    };
+
+    void startAnimation();
+
+    return () => {
+      cancelled = true;
+      stopAnimations?.();
+    };
+  }, [geometry, state, noticeOn, peeking, targetW, targetH, hitboxH, w, h, radius, ear]);
 
   return { w, h, radius, ear, peekY };
 }
