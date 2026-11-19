@@ -21,26 +21,6 @@ import {
   type TasksChanged,
 } from "../lib/tasks";
 
-/**
- * Antrean penyimpanan bersama dalam satu WebView.
- *
- * Memastikan beberapa pemanggilan save dari hook yang berbeda
- * tidak mengeksekusi penulisan secara bersamaan.
- */
-let saveQueue: Promise<void> = Promise.resolve();
-
-function enqueueTaskSave(data: string): Promise<void> {
-  const operation = saveQueue
-    .catch(() => {
-      // Kegagalan sebelumnya tidak boleh menghentikan antrean berikutnya.
-    })
-    .then(() => tasksIpc.save(data));
-
-  saveQueue = operation;
-
-  return operation;
-}
-
 /** Isi yang bisa diubah user saat membuat atau mengedit tugas. */
 export interface TaskInput {
   title: string;
@@ -57,14 +37,136 @@ export interface TaskStoreApi {
   addTask: (input: TaskInput) => void;
   updateTask: (id: string, input: TaskInput) => void;
   removeTask: (id: string) => void;
-  /** Membalik status selesai tugas pada satu tanggal. */
   toggleDone: (id: string, date: string) => void;
   addCategory: (name: string, color: string) => void;
   removeCategory: (id: string) => void;
-  /** Aksi untuk kartu pengingat. */
   complete: (id: string, date: string) => void;
   snooze: (id: string) => void;
   dismiss: (id: string, date: string) => void;
+}
+
+function sameValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+/**
+ * Menggabungkan perubahan array berbasis tanggal.
+ *
+ * Perubahan pada tanggal berbeda dari dua window tetap dipertahankan.
+ */
+function mergeDateArray(base: string[], local: string[], remote: string[]): string[] {
+  const baseSet = new Set(base);
+  const localSet = new Set(local);
+  const remoteSet = new Set(remote);
+
+  const removed = new Set([...base.filter((date) => !localSet.has(date)), ...base.filter((date) => !remoteSet.has(date))]);
+
+  const added = new Set([...local.filter((date) => !baseSet.has(date)), ...remote.filter((date) => !baseSet.has(date))]);
+
+  return [...new Set([...base, ...added])].filter((date) => !removed.has(date) || added.has(date));
+}
+
+/**
+ * Menggabungkan satu entitas berdasarkan perubahan tiga arah:
+ * data awal, perubahan lokal, dan perubahan remote.
+ *
+ * Jika kedua sisi mengubah field yang sama, perubahan lokal menang.
+ */
+function mergeEntity<T extends { id: string }>(base: T, local: T, remote: T): T {
+  const result: Record<string, unknown> = { ...remote };
+
+  const keys = new Set([...Object.keys(base), ...Object.keys(local), ...Object.keys(remote)]);
+
+  for (const key of keys) {
+    const baseValue = base[key as keyof T];
+    const localValue = local[key as keyof T];
+    const remoteValue = remote[key as keyof T];
+
+    if ((key === "doneDates" || key === "notifiedDates") && Array.isArray(baseValue) && Array.isArray(localValue) && Array.isArray(remoteValue)) {
+      result[key] = mergeDateArray(baseValue as string[], localValue as string[], remoteValue as string[]);
+      continue;
+    }
+
+    const localChanged = !sameValue(localValue, baseValue);
+    const remoteChanged = !sameValue(remoteValue, baseValue);
+
+    if (localChanged) {
+      result[key] = localValue;
+    } else if (remoteChanged) {
+      result[key] = remoteValue;
+    }
+  }
+
+  return result as T;
+}
+
+/** Menggabungkan daftar entitas berdasarkan ID. */
+function mergeEntityList<T extends { id: string }>(base: T[], local: T[], remote: T[]): T[] {
+  const baseMap = new Map(base.map((item) => [item.id, item]));
+  const localMap = new Map(local.map((item) => [item.id, item]));
+  const remoteMap = new Map(remote.map((item) => [item.id, item]));
+
+  const ids = new Set([...baseMap.keys(), ...localMap.keys(), ...remoteMap.keys()]);
+
+  const result: T[] = [];
+
+  for (const id of ids) {
+    const baseItem = baseMap.get(id);
+    const localItem = localMap.get(id);
+    const remoteItem = remoteMap.get(id);
+
+    // Entitas baru yang dibuat oleh salah satu window.
+    if (!baseItem) {
+      const item = localItem ?? remoteItem;
+
+      if (item) {
+        result.push(item);
+      }
+
+      continue;
+    }
+
+    // Kedua sisi menghapus entitas.
+    if (!localItem && !remoteItem) {
+      continue;
+    }
+
+    // Penghapusan lokal diprioritaskan.
+    if (!localItem) {
+      continue;
+    }
+
+    // Jika remote menghapus entitas:
+    // pertahankan perubahan lokal jika memang ada.
+    if (!remoteItem) {
+      if (!sameValue(localItem, baseItem)) {
+        result.push(localItem);
+      }
+
+      continue;
+    }
+
+    result.push(mergeEntity(baseItem, localItem, remoteItem));
+  }
+
+  return result;
+}
+
+/** Menggabungkan dua TaskStore berdasarkan data awal. */
+function mergeStores(base: TaskStore, local: TaskStore, remote: TaskStore): TaskStore {
+  const categories = mergeEntityList<Category>(base.categories, local.categories, remote.categories);
+
+  const categoryIds = new Set(categories.map((category) => category.id));
+
+  const tasks = mergeEntityList<Task>(base.tasks, local.tasks, remote.tasks).map((task) => (task.categoryId !== null && !categoryIds.has(task.categoryId) ? { ...task, categoryId: null } : task));
+
+  return {
+    ...remote,
+    ...local,
+    version: remote.version,
+    categories,
+    tasks,
+  };
 }
 
 function withDone(task: Task, date: string): Task {
@@ -78,49 +180,137 @@ function withDone(task: Task, date: string): Task {
 
 /**
  * Seluruh data tugas, dibagi antara island dan window Tugas.
- * Disimpan oleh Rust; perubahan dari window lain masuk lewat event `tasks-changed`.
+ * Penyimpanan dilakukan oleh Rust dengan optimistic concurrency control.
  */
 export function useTaskStore(): TaskStoreApi {
   const [store, setStore] = useState<TaskStore>(emptyStore);
   const [loaded, setLoaded] = useState(false);
 
   const latest = useRef(store);
+  const base = useRef<TaskStore>(emptyStore());
+  const revision = useRef("");
   const ready = useRef(false);
+
+  // Antrean penyimpanan per WebView.
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+
+  const apply = useCallback((next: TaskStore) => {
+    latest.current = next;
+    setStore(next);
+  }, []);
+
+  /**
+   * Menyimpan state terbaru.
+   *
+   * Jika revision sudah berubah, gabungkan data lokal dan remote
+   * kemudian coba simpan kembali menggunakan revision terbaru.
+   */
+  const persistLatest = useCallback(async () => {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const desired = latest.current;
+      const serialized = JSON.stringify(desired);
+
+      const result = await tasksIpc.save(serialized, revision.current);
+
+      if (result.saved) {
+        revision.current = result.revision;
+        base.current = desired;
+
+        // Ada perubahan baru ketika request sebelumnya berlangsung.
+        if (!sameValue(latest.current, desired)) {
+          continue;
+        }
+
+        return;
+      }
+
+      if (!result.currentData) {
+        throw new Error("Task save conflict occurred without current backend data.");
+      }
+
+      const remote = parseStore(result.currentData);
+
+      if (!remote) {
+        throw new Error("Backend returned invalid task data.");
+      }
+
+      const merged = mergeStores(base.current, desired, remote);
+
+      revision.current = result.revision;
+      base.current = remote;
+
+      apply(merged);
+
+      if (sameValue(merged, remote)) {
+        return;
+      }
+    }
+
+    throw new Error("Task save could not settle after repeated conflicts.");
+  }, [apply]);
+
+  /** Menambahkan operasi penyimpanan ke antrean. */
+  const scheduleSave = useCallback(() => {
+    saveQueue.current = saveQueue.current
+      .catch(() => {
+        // Kegagalan sebelumnya tidak boleh menghentikan antrean.
+      })
+      .then(() => persistLatest());
+
+    saveQueue.current.catch((error) => {
+      console.error("[Tasks] Failed to save task store:", error);
+    });
+  }, [persistLatest]);
+
+  /** Membaca data terbaru dari backend dan menyelaraskan state lokal. */
+  const refreshFromBackend = useCallback(async () => {
+    const result = await tasksIpc.load();
+    const remote = parseStore(result.data);
+
+    if (!remote) {
+      return;
+    }
+
+    const merged = mergeStores(base.current, latest.current, remote);
+
+    revision.current = result.revision;
+    base.current = remote;
+
+    apply(merged);
+
+    if (!sameValue(merged, remote)) {
+      await persistLatest();
+    }
+  }, [apply, persistLatest]);
 
   useEffect(() => {
     let active = true;
     let unlisten: (() => void) | undefined;
-
-    // Menampung event yang datang ketika inisialisasi belum selesai.
-    let pendingRemote: TaskStore | null = null;
+    let pendingRemote = false;
 
     const self = getCurrentWindow().label;
 
-    function apply(next: TaskStore) {
-      latest.current = next;
-      setStore(next);
-    }
-
     async function initialize() {
       try {
-        /**
-         * Pasang listener terlebih dahulu.
-         * Dengan begitu, perubahan dari window lain tidak terlewat
-         * selama proses pemuatan data berlangsung.
-         */
+        // Listener dipasang sebelum membaca data awal.
         unlisten = await listen<TasksChanged>(TASKS_CHANGED_EVENT, (event) => {
-          if (!active || event.payload.source === self) return;
-
-          const next = parseStore(event.payload.data);
-
-          if (!next) return;
-
-          if (!ready.current) {
-            pendingRemote = next;
+          if (!active || event.payload.source === self) {
             return;
           }
 
-          apply(next);
+          if (!ready.current) {
+            pendingRemote = true;
+            return;
+          }
+
+          // Jangan langsung mempercayai payload event.
+          // Baca ulang backend agar event yang terlambat tidak
+          // membuat state lokal kembali ke revision sebelumnya.
+          saveQueue.current = saveQueue.current.catch(() => {}).then(() => refreshFromBackend());
+
+          saveQueue.current.catch((error) => {
+            console.error("[Tasks] Failed to synchronize remote data:", error);
+          });
         });
 
         if (!active) {
@@ -128,37 +318,46 @@ export function useTaskStore(): TaskStoreApi {
           return;
         }
 
-        const text = await tasksIpc.load();
+        let result = await tasksIpc.load();
 
-        if (!active) return;
-
-        let initial = text ? parseStore(text) : null;
-
-        /**
-         * Jika ada perubahan dari window lain selama inisialisasi,
-         * gunakan data event tersebut sebagai kandidat state awal.
-         */
-        if (pendingRemote !== null) {
-          initial = pendingRemote;
+        if (!active) {
+          return;
         }
 
-        // Pertama kali: migrasikan data lama dari localStorage.
+        // Jika ada event selama pemuatan, baca ulang data backend.
+        if (pendingRemote) {
+          pendingRemote = false;
+          result = await tasksIpc.load();
+        }
+
+        if (!active) {
+          return;
+        }
+
+        let initial = result.data ? parseStore(result.data) : null;
+
+        revision.current = result.revision;
+
         if (initial === null) {
           initial = {
             ...emptyStore(),
             tasks: loadLegacyTasks(),
           };
 
-          if (initial.tasks.length > 0) {
-            await enqueueTaskSave(JSON.stringify(initial));
-          }
+          base.current = emptyStore();
+        } else {
+          base.current = initial;
         }
 
-        if (!active) return;
-
         apply(initial);
+
         ready.current = true;
         setLoaded(true);
+
+        // Migrasi data lama dari localStorage.
+        if (initial.tasks.length > 0 && !result.data) {
+          await persistLatest();
+        }
       } catch (error) {
         if (active) {
           console.error("[Tasks] Failed to initialize task store:", error);
@@ -173,23 +372,21 @@ export function useTaskStore(): TaskStoreApi {
       ready.current = false;
       unlisten?.();
     };
-  }, []);
+  }, [apply, persistLatest]);
 
-  const commit = useCallback((change: (previous: TaskStore) => TaskStore) => {
-    // Jangan menimpa data asli sebelum proses inisialisasi selesai.
-    if (!ready.current) return;
+  const commit = useCallback(
+    (change: (previous: TaskStore) => TaskStore) => {
+      if (!ready.current) {
+        return;
+      }
 
-    const next = change(latest.current);
+      const next = change(latest.current);
 
-    // Perbarui state secara optimistis.
-    latest.current = next;
-    setStore(next);
-
-    // Penyimpanan dilakukan secara berurutan.
-    enqueueTaskSave(JSON.stringify(next)).catch((error) => {
-      console.error("[Tasks] Failed to save task store:", error);
-    });
-  }, []);
+      apply(next);
+      scheduleSave();
+    },
+    [apply, scheduleSave],
+  );
 
   const patch = useCallback(
     (id: string, change: (task: Task) => Task) =>
@@ -221,7 +418,6 @@ export function useTaskStore(): TaskStoreApi {
         ],
       })),
 
-    // Mengubah jam atau tanggal membuat pengingat berlaku lagi.
     updateTask: (id, input) =>
       patch(id, (task) => ({
         ...task,
@@ -263,7 +459,7 @@ export function useTaskStore(): TaskStoreApi {
       patch(id, (task) => ({
         ...task,
         doneDates: task.doneDates.includes(date) ? task.doneDates : [...task.doneDates, date],
-        notifiedDates: [...task.notifiedDates, date],
+        notifiedDates: task.notifiedDates.includes(date) ? task.notifiedDates : [...task.notifiedDates, date],
         snoozeUntil: null,
       })),
 
@@ -276,7 +472,7 @@ export function useTaskStore(): TaskStoreApi {
     dismiss: (id, date) =>
       patch(id, (task) => ({
         ...task,
-        notifiedDates: [...task.notifiedDates, date],
+        notifiedDates: task.notifiedDates.includes(date) ? task.notifiedDates : [...task.notifiedDates, date],
         snoozeUntil: null,
       })),
   };
@@ -286,12 +482,9 @@ export function useTaskStore(): TaskStoreApi {
 
 export interface TasksApi {
   categories: Category[];
-  /** Tugas hari ini: yang belum selesai dulu. */
   today: Occurrence[];
   openCount: number;
-  /** Tugas yang pengingatnya sedang berbunyi. */
   due: Occurrence | null;
-  /** Menambah tugas untuk hari ini (sekali jalan). */
   add: (title: string, time: string | null) => void;
   toggle: (id: string, date: string) => void;
   complete: (occurrence: Occurrence) => void;
