@@ -142,17 +142,81 @@ export function useIslandController() {
 
   // 3. Info lagu dan status putar.
   useEffect(() => {
-    invoke<MediaInfo | null>("get_media_info").then(setMedia).catch(console.error);
-    invoke<PlaybackInfo | null>("get_playback_info")
-      .then((info) => setPlayback(stamp(info)))
-      .catch(console.error);
+    let active = true;
+    let mediaEventReceived = false;
+    let playbackEventReceived = false;
 
-    const unlistenMedia = listen<MediaInfo | null>("media-changed", (event) => setMedia(event.payload));
-    const unlistenPlayback = listen<PlaybackInfo | null>("playback-changed", (event) => setPlayback(stamp(event.payload)));
+    let unlistenMedia: (() => void) | undefined;
+    let unlistenPlayback: (() => void) | undefined;
+
+    const initialize = async () => {
+      try {
+        // Pasang listener media sebelum mengambil snapshot awal.
+        const stopListeningMedia = await listen<MediaInfo | null>("media-changed", (event) => {
+          mediaEventReceived = true;
+
+          if (active) {
+            setMedia(event.payload);
+          }
+        });
+
+        if (!active) {
+          stopListeningMedia();
+          return;
+        }
+
+        unlistenMedia = stopListeningMedia;
+
+        // Pasang listener playback sebelum mengambil snapshot awal.
+        const stopListeningPlayback = await listen<PlaybackInfo | null>("playback-changed", (event) => {
+          playbackEventReceived = true;
+
+          if (active) {
+            setPlayback(stamp(event.payload));
+          }
+        });
+
+        if (!active) {
+          stopListeningPlayback();
+          return;
+        }
+
+        unlistenPlayback = stopListeningPlayback;
+
+        // Ambil kedua snapshot secara independen agar kegagalan salah satunya
+        // tidak menghalangi data awal yang lain.
+        const [mediaResult, playbackResult] = await Promise.allSettled([invoke<MediaInfo | null>("get_media_info"), invoke<PlaybackInfo | null>("get_playback_info")]);
+
+        if (!active) return;
+
+        if (!mediaEventReceived) {
+          if (mediaResult.status === "fulfilled") {
+            setMedia(mediaResult.value);
+          } else {
+            console.error("Gagal mengambil informasi media awal:", mediaResult.reason);
+          }
+        }
+
+        if (!playbackEventReceived) {
+          if (playbackResult.status === "fulfilled") {
+            setPlayback(stamp(playbackResult.value));
+          } else {
+            console.error("Gagal mengambil informasi playback awal:", playbackResult.reason);
+          }
+        }
+      } catch (error) {
+        if (active) {
+          console.error("Gagal menginisialisasi listener media:", error);
+        }
+      }
+    };
+
+    void initialize();
 
     return () => {
-      unlistenMedia.then((stop) => stop());
-      unlistenPlayback.then((stop) => stop());
+      active = false;
+      unlistenMedia?.();
+      unlistenPlayback?.();
     };
   }, []);
 

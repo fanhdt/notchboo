@@ -564,3 +564,8 @@ If a change could cause significant data loss, security regression, or break exi
 **Your immediate objective is to make the existing Notchboo codebase reliable enough to support the next generation of desktop productivity features.**
 
 Begin by inspecting the repository.
+
+MOCHI
+Paling cocok
+
+Modular On-device Companion for Human Interactio
