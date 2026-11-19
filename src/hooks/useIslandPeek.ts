@@ -24,36 +24,53 @@ export function useIslandPeek(peeking: boolean, compactHeight: number): MotionVa
   const y = useMotionValue(0);
 
   useEffect(() => {
-    if (!peeking) {
-      animate(y, 0, SPRING);
-      return;
-    }
-
-    const hiddenY = -(compactHeight - PEEK_VISIBLE_PX);
-    animate(y, hiddenY, SPRING);
-
+    let cancelled = false;
     const timers: ReturnType<typeof setTimeout>[] = [];
+    const animations: Array<{ stop: () => void }> = [];
 
-    const scheduleNextPeek = () => {
-      const wait = PEEK_MIN_WAIT_MS + Math.random() * (PEEK_MAX_WAIT_MS - PEEK_MIN_WAIT_MS);
-
-      timers.push(
-        setTimeout(() => {
-          animate(y, hiddenY + PEEK_OUT_PX, SPRING);
-
-          timers.push(
-            setTimeout(() => {
-              animate(y, hiddenY, SPRING);
-              scheduleNextPeek();
-            }, PEEK_HOLD_MS),
-          );
-        }, wait),
-      );
+    const startAnimation = (target: number) => {
+      if (cancelled) return;
+      animations.push(animate(y, target, SPRING));
     };
 
-    scheduleNextPeek();
+    if (!peeking) {
+      startAnimation(0);
+    } else {
+      const hiddenY = -(compactHeight - PEEK_VISIBLE_PX);
 
-    return () => timers.forEach(clearTimeout);
+      startAnimation(hiddenY);
+
+      const scheduleNextPeek = () => {
+        if (cancelled) return;
+
+        const wait = PEEK_MIN_WAIT_MS + Math.random() * (PEEK_MAX_WAIT_MS - PEEK_MIN_WAIT_MS);
+
+        timers.push(
+          setTimeout(() => {
+            if (cancelled) return;
+
+            startAnimation(hiddenY + PEEK_OUT_PX);
+
+            timers.push(
+              setTimeout(() => {
+                if (cancelled) return;
+
+                startAnimation(hiddenY);
+                scheduleNextPeek();
+              }, PEEK_HOLD_MS),
+            );
+          }, wait),
+        );
+      };
+
+      scheduleNextPeek();
+    }
+
+    return () => {
+      cancelled = true;
+      timers.forEach(clearTimeout);
+      animations.forEach((animation) => animation.stop());
+    };
   }, [peeking, compactHeight, y]);
 
   return y;

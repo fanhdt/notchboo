@@ -8,18 +8,45 @@ export function useForegroundBusy(): boolean {
 
   useEffect(() => {
     let active = true;
+    let eventReceived = false;
+    let unlisten: (() => void) | undefined;
 
-    invoke<boolean>("get_foreground_busy")
-      .then((value) => {
-        if (active) setBusy(value);
-      })
-      .catch(console.error);
+    const initialize = async () => {
+      try {
+        // Pasang listener sebelum mengambil status awal agar perubahan tidak terlewat.
+        const stopListening = await listen<boolean>("foreground-busy", (event) => {
+          eventReceived = true;
 
-    const unlisten = listen<boolean>("foreground-busy", (event) => setBusy(event.payload));
+          if (active) {
+            setBusy(event.payload);
+          }
+        });
+
+        if (!active) {
+          stopListening();
+          return;
+        }
+
+        unlisten = stopListening;
+
+        const initialBusy = await invoke<boolean>("get_foreground_busy");
+
+        // Jangan menimpa status terbaru jika event sudah diterima.
+        if (active && !eventReceived) {
+          setBusy(initialBusy);
+        }
+      } catch (error) {
+        if (active) {
+          console.error("Gagal menginisialisasi foreground status:", error);
+        }
+      }
+    };
+
+    void initialize();
 
     return () => {
       active = false;
-      unlisten.then((stop) => stop());
+      unlisten?.();
     };
   }, []);
 
