@@ -1,9 +1,14 @@
+
 //! Ikon Notchboo di system tray (area panah ke atas di kanan bawah Windows).
 //!
 //! Menunya memilih mode tampilan island dan menyediakan tombol keluar. Pilihan disimpan di folder
 //! konfigurasi aplikasi supaya bertahan setelah aplikasi dibuka ulang.
 
-use std::{fs, path::PathBuf, sync::Mutex};
+use std::{
+    fs,
+    path::PathBuf,
+    sync::{Mutex, MutexGuard},
+};
 
 use serde::Serialize;
 use tauri::{
@@ -39,17 +44,18 @@ pub enum PeekMode {
 impl PeekMode {
     fn as_setting(self) -> &'static str {
         match self {
-            PeekMode::WhenBusy => "whenBusy",
-            PeekMode::Always => "always",
-            PeekMode::Standby => "standby",
+            Self::WhenBusy => "whenBusy",
+            Self::Always => "always",
+            Self::Standby => "standby",
         }
     }
 
-    fn from_setting(text: &str) -> Self {
+    fn from_setting(text: &str) -> Option<Self> {
         match text.trim() {
-            "always" => PeekMode::Always,
-            "standby" => PeekMode::Standby,
-            _ => PeekMode::WhenBusy,
+            "whenBusy" => Some(Self::WhenBusy),
+            "always" => Some(Self::Always),
+            "standby" => Some(Self::Standby),
+            _ => None,
         }
     }
 }
@@ -59,36 +65,73 @@ pub struct PeekState {
     mode: Mutex<PeekMode>,
 }
 
+fn lock_mode(state: &PeekState) -> MutexGuard<'_, PeekMode> {
+    state
+        .mode
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// Mode saat ini, untuk React saat pertama kali dimuat.
 #[tauri::command]
 pub fn get_peek_mode(state: State<'_, PeekState>) -> PeekMode {
-    *state.mode.lock().expect("peek mutex rusak")
+    *lock_mode(&state)
 }
 
 fn settings_path(app: &AppHandle) -> Option<PathBuf> {
-    app.path().app_config_dir().ok().map(|dir| dir.join(SETTINGS_FILE))
+    match app.path().app_config_dir() {
+        Ok(dir) => Some(dir.join(SETTINGS_FILE)),
+        Err(error) => {
+            eprintln!("gagal mendapatkan direktori konfigurasi peek mode: {error}");
+            None
+        }
+    }
 }
 
 fn load_mode(app: &AppHandle) -> PeekMode {
-    settings_path(app)
-        .and_then(|path| fs::read_to_string(path).ok())
-        .map(|text| PeekMode::from_setting(&text))
-        .unwrap_or_default()
+    let Some(path) = settings_path(app) else {
+        return PeekMode::default();
+    };
+
+    match fs::read_to_string(&path) {
+        Ok(text) => match PeekMode::from_setting(&text) {
+            Some(mode) => mode,
+            None => {
+                eprintln!(
+                    "konfigurasi peek mode tidak valid di {}. Menggunakan mode default.",
+                    path.display()
+                );
+                PeekMode::default()
+            }
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => PeekMode::default(),
+        Err(error) => {
+            eprintln!("gagal membaca konfigurasi peek mode: {error}");
+            PeekMode::default()
+        }
+    }
 }
 
 fn save_mode(app: &AppHandle, mode: PeekMode) {
     let Some(path) = settings_path(app) else {
         return;
     };
+
     if let Some(dir) = path.parent() {
-        let _ = fs::create_dir_all(dir);
+        if let Err(error) = fs::create_dir_all(dir) {
+            eprintln!("gagal membuat direktori konfigurasi peek mode: {error}");
+            return;
+        }
     }
+
     // Gagal menyimpan bukan masalah fatal: pilihan tetap berlaku sampai aplikasi ditutup.
-    let _ = fs::write(path, mode.as_setting());
+    if let Err(error) = fs::write(&path, mode.as_setting()) {
+        eprintln!("gagal menyimpan konfigurasi peek mode: {error}");
+    }
 }
 
 fn apply_mode(app: &AppHandle, mode: PeekMode, checks: &[(PeekMode, CheckMenuItem<Wry>)]) {
-    *app.state::<PeekState>().mode.lock().expect("peek mutex rusak") = mode;
+    *lock_mode(&app.state::<PeekState>()) = mode;
     save_mode(app, mode);
 
     // Item centang bisa berubah sendiri saat diklik, jadi semua item disetel ulang secara eksplisit.
@@ -102,23 +145,56 @@ fn apply_mode(app: &AppHandle, mode: PeekMode, checks: &[(PeekMode, CheckMenuIte
 /// Membuat ikon tray dan memuat mode yang tersimpan. Dipanggil dari `setup`.
 pub fn init(app: &AppHandle) -> tauri::Result<()> {
     let mode = load_mode(app);
-    *app.state::<PeekState>().mode.lock().expect("peek mutex rusak") = mode;
+    *lock_mode(&app.state::<PeekState>()) = mode;
 
-    let make = |id: &str, label: &str, item_mode: PeekMode| CheckMenuItem::with_id(app, id, label, true, mode == item_mode, None::<&str>);
+    let make = |id: &str, label: &str, item_mode: PeekMode| {
+        CheckMenuItem::with_id(app, id, label, true, mode == item_mode, None::<&str>)
+    };
 
     let when_busy = make(ID_WHEN_BUSY, "Peek saat aplikasi lain aktif", PeekMode::WhenBusy)?;
     let always = make(ID_ALWAYS, "Peek terus-menerus", PeekMode::Always)?;
     let standby = make(ID_STANDBY, "Standby (selalu terbuka)", PeekMode::Standby)?;
-    let autostart_item = CheckMenuItem::with_id(app, ID_AUTOSTART, "Jalankan saat sistem menyala", true, crate::autostart::is_enabled(app), None::<&str>)?;
-    let test_notice = MenuItem::with_id(app, ID_TEST_NOTICE, "Uji notifikasi pesan", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, ID_QUIT, "Keluar", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&when_busy, &always, &standby, &PredefinedMenuItem::separator(app)?, &autostart_item, &test_notice, &quit])?;
 
-    let checks = vec![(PeekMode::WhenBusy, when_busy.clone()), (PeekMode::Always, always.clone()), (PeekMode::Standby, standby.clone())];
+    let autostart_item = CheckMenuItem::with_id(
+        app,
+        ID_AUTOSTART,
+        "Jalankan saat sistem menyala",
+        true,
+        crate::autostart::is_enabled(app),
+        None::<&str>,
+    )?;
+
+    let test_notice =
+        MenuItem::with_id(app, ID_TEST_NOTICE, "Uji notifikasi pesan", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, ID_QUIT, "Keluar", true, None::<&str>)?;
+
+    let separator = PredefinedMenuItem::separator(app)?;
+
+    let menu = Menu::with_items(
+        app,
+        &[
+            &when_busy,
+            &always,
+            &standby,
+            &separator,
+            &autostart_item,
+            &test_notice,
+            &quit,
+        ],
+    )?;
+
+    let checks = vec![
+        (PeekMode::WhenBusy, when_busy.clone()),
+        (PeekMode::Always, always.clone()),
+        (PeekMode::Standby, standby.clone()),
+    ];
 
     let autostart_check = autostart_item.clone();
 
-    let mut tray = TrayIconBuilder::with_id("main").tooltip("Notchboo").menu(&menu);
+    let mut tray = TrayIconBuilder::with_id("main")
+        .tooltip("Notchboo")
+        .menu(&menu);
+
     if let Some(icon) = app.default_window_icon() {
         tray = tray.icon(icon.clone());
     }
