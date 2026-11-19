@@ -38,8 +38,6 @@ use tauri::{Manager, RunEvent};
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
-        // Harus plugin pertama: menjalankan aplikasi kedua kali (mis. setelah mulai-otomatis) tidak
-        // membuka salinan baru. Island yang sudah berjalan tetap satu-satunya.
         .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -52,27 +50,25 @@ pub fn run() {
         .manage(tray::PeekState::default())
         .manage(monitor::MonitorControl::default())
         .setup(|app| {
-            // macOS: tanpa ikon Dock dan menu bar, seperti aplikasi tray.
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             if let Some(main_window) = app.get_webview_window("main") {
                 window::position_top_center(&main_window)?;
+
                 #[cfg(target_os = "macos")]
                 mac::float_above_menu_bar(&main_window)?;
+
                 main_window.set_ignore_cursor_events(true)?;
                 main_window.show()?;
 
-                // Satu thread untuk hover dan arah pandang Mochi (lihat island.rs).
                 island::start_cursor_watcher(app.handle(), main_window);
             }
 
             foreground::start_foreground_watcher(app.handle());
 
-            // Pertama kali dijalankan: nyalakan mulai-otomatis (bisa dimatikan dari menu tray).
             autostart::enable_on_first_run(app.handle());
 
-            // Ikon tray tidak boleh menjatuhkan island kalau gagal dibuat.
             if let Err(error) = tray::init(app.handle()) {
                 eprintln!("gagal membuat ikon tray: {error}");
             }
@@ -81,8 +77,6 @@ pub fn run() {
             monitor::start_monitor(app.handle());
             notifications::start_notification_watcher(app.handle());
 
-            // Quick Shelf: gagal membuka database tidak boleh menjatuhkan aplikasi.
-            // Kegagalannya disimpan di state dan dilaporkan oleh tiap command shelf.
             app.manage(shelf::init(app.handle()));
             shelf::start_maintenance(app.handle());
 
@@ -123,7 +117,11 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         if let RunEvent::Exit = event {
-            // Hentikan worker yang memiliki mekanisme shutdown eksplisit.
+            // Hentikan seluruh worker yang memiliki mekanisme shutdown eksplisit.
+            #[cfg(windows)]
+            foreground::stop_foreground_watcher();
+
+            island::stop_cursor_watcher();
             monitor::stop_monitor(app_handle);
             media::stop_media_watcher();
             notifications::stop_notification_watcher();

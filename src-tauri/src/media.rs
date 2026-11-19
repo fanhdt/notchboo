@@ -421,7 +421,7 @@ fn run_media_watcher(
 
     let mut subscription = subscribe_to_current_session(&manager, sender);
     emit_media(app, read_media_info_from(&manager));
-    emit_playback(app, read_playback_info_from(&manager));
+    emit_playback(app, read_playback_from(&manager));
 
     // Tidur sampai ada pesan atau sinyal shutdown.
     loop {
@@ -461,7 +461,7 @@ fn run_media_watcher(
             emit_media(app, read_media_info_from(&manager));
         }
 
-        emit_playback(app, read_playback_info_from(&manager));
+       emit_playback(app, read_playback_from(&manager));
     }
 
     // Lepaskan listener sebelum keluar dari worker.
