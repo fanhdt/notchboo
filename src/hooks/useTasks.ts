@@ -21,6 +21,26 @@ import {
   type TasksChanged,
 } from "../lib/tasks";
 
+/**
+ * Antrean penyimpanan bersama dalam satu WebView.
+ *
+ * Memastikan beberapa pemanggilan save dari hook yang berbeda
+ * tidak mengeksekusi penulisan secara bersamaan.
+ */
+let saveQueue: Promise<void> = Promise.resolve();
+
+function enqueueTaskSave(data: string): Promise<void> {
+  const operation = saveQueue
+    .catch(() => {
+      // Kegagalan sebelumnya tidak boleh menghentikan antrean berikutnya.
+    })
+    .then(() => tasksIpc.save(data));
+
+  saveQueue = operation;
+
+  return operation;
+}
+
 /** Isi yang bisa diubah user saat membuat atau mengedit tugas. */
 export interface TaskInput {
   title: string;
@@ -49,7 +69,11 @@ export interface TaskStoreApi {
 
 function withDone(task: Task, date: string): Task {
   const done = task.doneDates.includes(date);
-  return { ...task, doneDates: done ? task.doneDates.filter((item) => item !== date) : [...task.doneDates, date] };
+
+  return {
+    ...task,
+    doneDates: done ? task.doneDates.filter((item) => item !== date) : [...task.doneDates, date],
+  };
 }
 
 /**
@@ -65,6 +89,11 @@ export function useTaskStore(): TaskStoreApi {
 
   useEffect(() => {
     let active = true;
+    let unlisten: (() => void) | undefined;
+
+    // Menampung event yang datang ketika inisialisasi belum selesai.
+    let pendingRemote: TaskStore | null = null;
+
     const self = getCurrentWindow().label;
 
     function apply(next: TaskStore) {
@@ -72,49 +101,104 @@ export function useTaskStore(): TaskStoreApi {
       setStore(next);
     }
 
-    tasksIpc
-      .load()
-      .then(async (text) => {
+    async function initialize() {
+      try {
+        /**
+         * Pasang listener terlebih dahulu.
+         * Dengan begitu, perubahan dari window lain tidak terlewat
+         * selama proses pemuatan data berlangsung.
+         */
+        unlisten = await listen<TasksChanged>(TASKS_CHANGED_EVENT, (event) => {
+          if (!active || event.payload.source === self) return;
+
+          const next = parseStore(event.payload.data);
+
+          if (!next) return;
+
+          if (!ready.current) {
+            pendingRemote = next;
+            return;
+          }
+
+          apply(next);
+        });
+
+        if (!active) {
+          unlisten();
+          return;
+        }
+
+        const text = await tasksIpc.load();
+
         if (!active) return;
 
         let initial = text ? parseStore(text) : null;
 
-        // Pertama kali: bawa tugas dari versi lama (localStorage) ke penyimpanan baru.
+        /**
+         * Jika ada perubahan dari window lain selama inisialisasi,
+         * gunakan data event tersebut sebagai kandidat state awal.
+         */
+        if (pendingRemote !== null) {
+          initial = pendingRemote;
+        }
+
+        // Pertama kali: migrasikan data lama dari localStorage.
         if (initial === null) {
-          initial = { ...emptyStore(), tasks: loadLegacyTasks() };
-          if (initial.tasks.length > 0) await tasksIpc.save(JSON.stringify(initial));
+          initial = {
+            ...emptyStore(),
+            tasks: loadLegacyTasks(),
+          };
+
+          if (initial.tasks.length > 0) {
+            await enqueueTaskSave(JSON.stringify(initial));
+          }
         }
 
         if (!active) return;
+
         apply(initial);
         ready.current = true;
         setLoaded(true);
-      })
-      .catch(console.error);
+      } catch (error) {
+        if (active) {
+          console.error("[Tasks] Failed to initialize task store:", error);
+        }
+      }
+    }
 
-    const unlisten = listen<TasksChanged>(TASKS_CHANGED_EVENT, (event) => {
-      if (event.payload.source === self) return;
-      const next = parseStore(event.payload.data);
-      if (next) apply(next);
-    });
+    initialize();
 
     return () => {
       active = false;
-      unlisten.then((stop) => stop());
+      ready.current = false;
+      unlisten?.();
     };
   }, []);
 
   const commit = useCallback((change: (previous: TaskStore) => TaskStore) => {
-    // Sebelum data selesai dimuat, menyimpan akan menimpa data asli dengan yang kosong.
+    // Jangan menimpa data asli sebelum proses inisialisasi selesai.
     if (!ready.current) return;
 
     const next = change(latest.current);
+
+    // Perbarui state secara optimistis.
     latest.current = next;
     setStore(next);
-    tasksIpc.save(JSON.stringify(next)).catch(console.error);
+
+    // Penyimpanan dilakukan secara berurutan.
+    enqueueTaskSave(JSON.stringify(next)).catch((error) => {
+      console.error("[Tasks] Failed to save task store:", error);
+    });
   }, []);
 
-  const patch = useCallback((id: string, change: (task: Task) => Task) => commit((previous) => ({ ...previous, tasks: previous.tasks.map((task) => (task.id === id ? change(task) : task)) })), [commit]);
+  const patch = useCallback(
+    (id: string, change: (task: Task) => Task) =>
+      commit((previous) => ({
+        ...previous,
+        tasks: previous.tasks.map((task) => (task.id === id ? change(task) : task)),
+      })),
+    [commit],
+  );
 
   return {
     store,
@@ -123,17 +207,50 @@ export function useTaskStore(): TaskStoreApi {
     addTask: (input) =>
       commit((previous) => ({
         ...previous,
-        tasks: [...previous.tasks, { ...input, title: input.title.trim(), id: newId(), doneDates: [], notifiedDates: [], snoozeUntil: null, createdAt: Date.now() }],
+        tasks: [
+          ...previous.tasks,
+          {
+            ...input,
+            title: input.title.trim(),
+            id: newId(),
+            doneDates: [],
+            notifiedDates: [],
+            snoozeUntil: null,
+            createdAt: Date.now(),
+          },
+        ],
       })),
 
     // Mengubah jam atau tanggal membuat pengingat berlaku lagi.
-    updateTask: (id, input) => patch(id, (task) => ({ ...task, ...input, title: input.title.trim(), notifiedDates: [], snoozeUntil: null })),
+    updateTask: (id, input) =>
+      patch(id, (task) => ({
+        ...task,
+        ...input,
+        title: input.title.trim(),
+        notifiedDates: [],
+        snoozeUntil: null,
+      })),
 
-    removeTask: (id) => commit((previous) => ({ ...previous, tasks: previous.tasks.filter((task) => task.id !== id) })),
+    removeTask: (id) =>
+      commit((previous) => ({
+        ...previous,
+        tasks: previous.tasks.filter((task) => task.id !== id),
+      })),
 
     toggleDone: (id, date) => patch(id, (task) => withDone(task, date)),
 
-    addCategory: (name, color) => commit((previous) => ({ ...previous, categories: [...previous.categories, { id: newId(), name: name.trim(), color }] })),
+    addCategory: (name, color) =>
+      commit((previous) => ({
+        ...previous,
+        categories: [
+          ...previous.categories,
+          {
+            id: newId(),
+            name: name.trim(),
+            color,
+          },
+        ],
+      })),
 
     removeCategory: (id) =>
       commit((previous) => ({
@@ -150,9 +267,18 @@ export function useTaskStore(): TaskStoreApi {
         snoozeUntil: null,
       })),
 
-    snooze: (id) => patch(id, (task) => ({ ...task, snoozeUntil: Date.now() + REMINDER_SNOOZE_MS })),
+    snooze: (id) =>
+      patch(id, (task) => ({
+        ...task,
+        snoozeUntil: Date.now() + REMINDER_SNOOZE_MS,
+      })),
 
-    dismiss: (id, date) => patch(id, (task) => ({ ...task, notifiedDates: [...task.notifiedDates, date], snoozeUntil: null })),
+    dismiss: (id, date) =>
+      patch(id, (task) => ({
+        ...task,
+        notifiedDates: [...task.notifiedDates, date],
+        snoozeUntil: null,
+      })),
   };
 }
 
@@ -186,18 +312,23 @@ export function useTasks(): TasksApi {
   useEffect(() => {
     const check = () => {
       const day = todayKey();
+
       setToday((previous) => (previous === day ? previous : day));
 
       const id = findDue(tasks, day, Date.now())?.task.id ?? null;
+
       setDueId((previous) => (previous === id ? previous : id));
     };
 
     check();
+
     const timer = setInterval(check, 2000);
+
     return () => clearInterval(timer);
   }, [tasks]);
 
   const list = useMemo(() => occurrencesOn(tasks, today, today), [tasks, today]);
+
   const due = useMemo(() => (dueId === null ? null : (list.find((occurrence) => occurrence.task.id === dueId && !occurrence.overdue) ?? null)), [dueId, list]);
 
   return {
@@ -205,13 +336,29 @@ export function useTasks(): TasksApi {
     today: list,
     openCount: list.filter((occurrence) => !occurrence.done).length,
     due,
-    add: (title, time) => api.addTask({ title, categoryId: null, date: today, time, repeat: "none", days: [] }),
+
+    add: (title, time) =>
+      api.addTask({
+        title,
+        categoryId: null,
+        date: today,
+        time,
+        repeat: "none",
+        days: [],
+      }),
+
     toggle: api.toggleDone,
+
     complete: (occurrence) => api.complete(occurrence.task.id, occurrence.date),
+
     snooze: (occurrence) => api.snooze(occurrence.task.id),
+
     dismiss: (occurrence) => api.dismiss(occurrence.task.id, occurrence.date),
+
     openWindow: () => {
-      tasksIpc.openWindow().catch(console.error);
+      tasksIpc.openWindow().catch((error) => {
+        console.error("[Tasks] Failed to open tasks window:", error);
+      });
     },
   };
 }

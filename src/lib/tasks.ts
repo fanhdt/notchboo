@@ -103,11 +103,18 @@ export const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 export const DAY_SHORT = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
 
 export function formatLongDate(key: string): string {
-  return fromKey(key).toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long" });
+  return fromKey(key).toLocaleDateString("id-ID", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
 }
 
 export function formatShortDate(key: string): string {
-  return fromKey(key).toLocaleDateString("id-ID", { day: "numeric", month: "short" });
+  return fromKey(key).toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "short",
+  });
 }
 
 // ---------- Kemunculan ----------
@@ -131,7 +138,9 @@ function compareOccurrences(a: Occurrence, b: Occurrence): number {
 
   const timeA = a.task.time ?? "99:99";
   const timeB = b.task.time ?? "99:99";
+
   if (timeA !== timeB) return timeA < timeB ? -1 : 1;
+
   return a.task.createdAt - b.task.createdAt;
 }
 
@@ -141,9 +150,19 @@ export function occurrencesOn(tasks: Task[], key: string, today: string): Occurr
 
   for (const task of tasks) {
     if (occursOn(task, key)) {
-      list.push({ task, date: key, done: task.doneDates.includes(key), overdue: false });
+      list.push({
+        task,
+        date: key,
+        done: task.doneDates.includes(key),
+        overdue: false,
+      });
     } else if (key === today && task.repeat === "none" && task.date < today && !task.doneDates.includes(task.date)) {
-      list.push({ task, date: task.date, done: false, overdue: true });
+      list.push({
+        task,
+        date: task.date,
+        done: false,
+        overdue: true,
+      });
     }
   }
 
@@ -156,10 +175,13 @@ export function openCountOn(tasks: Task[], key: string, today: string): number {
 
 export function describeRepeat(task: Task): string | null {
   if (task.repeat === "daily") return "Setiap hari";
+
   if (task.repeat === "weekly") {
     const names = WEEK_ORDER.filter((day) => task.days.includes(day)).map((day) => DAY_SHORT[day]);
+
     return names.length > 0 ? names.join(", ") : "Mingguan";
   }
+
   return null;
 }
 
@@ -169,10 +191,12 @@ function remindAt(task: Task, key: string): number | null {
   if (!task.time) return null;
 
   const [hours, minutes] = task.time.split(":").map(Number);
+
   if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
 
   const date = fromKey(key);
   date.setHours(hours, minutes, 0, 0);
+
   return date.getTime();
 }
 
@@ -181,14 +205,24 @@ export function findDue(tasks: Task[], today: string, now: number): Occurrence |
   const startOfToday = fromKey(today).getTime();
 
   for (const task of tasks) {
-    if (!task.time || !occursOn(task, today) || task.doneDates.includes(today)) continue;
+    if (!task.time || !occursOn(task, today) || task.doneDates.includes(today)) {
+      continue;
+    }
 
     const at = remindAt(task, today);
+
     if (at === null) continue;
 
     const due = task.snoozeUntil !== null && task.snoozeUntil >= startOfToday ? now >= task.snoozeUntil : !task.notifiedDates.includes(today) && now >= at && now - at < DUE_WINDOW_MS;
 
-    if (due) return { task, date: today, done: false, overdue: false };
+    if (due) {
+      return {
+        task,
+        date: today,
+        done: false,
+        overdue: false,
+      };
+    }
   }
 
   return null;
@@ -198,7 +232,9 @@ export function findDue(tasks: Task[], today: string, now: number): Occurrence |
 
 function isCategory(value: unknown): value is Category {
   if (typeof value !== "object" || value === null) return false;
+
   const item = value as Partial<Category>;
+
   return typeof item.id === "string" && typeof item.name === "string" && typeof item.color === "string";
 }
 
@@ -208,8 +244,12 @@ function toStrings(value: unknown): string[] {
 
 function toTask(value: unknown): Task | null {
   if (typeof value !== "object" || value === null) return null;
+
   const item = value as Partial<Task>;
-  if (typeof item.id !== "string" || typeof item.title !== "string" || typeof item.date !== "string") return null;
+
+  if (typeof item.id !== "string" || typeof item.title !== "string" || typeof item.date !== "string") {
+    return null;
+  }
 
   return {
     id: item.id,
@@ -229,11 +269,17 @@ function toTask(value: unknown): Task | null {
 /** Membaca JSON tersimpan. Mengembalikan null jika tidak bisa dibaca. */
 export function parseStore(text: string): TaskStore | null {
   try {
-    const parsed = JSON.parse(text) as { tasks?: unknown; categories?: unknown };
+    const parsed = JSON.parse(text) as {
+      tasks?: unknown;
+      categories?: unknown;
+    };
+
     if (!parsed || typeof parsed !== "object") return null;
 
     const tasks = Array.isArray(parsed.tasks) ? parsed.tasks.map(toTask).filter((task): task is Task => task !== null) : [];
+
     const categories = Array.isArray(parsed.categories) ? parsed.categories.filter(isCategory) : DEFAULT_CATEGORIES;
+
     return { version: 1, tasks, categories };
   } catch {
     return null;
@@ -246,18 +292,32 @@ const LEGACY_KEY = "notchboo.tasks";
 export function loadLegacyTasks(): Task[] {
   try {
     const raw = localStorage.getItem(LEGACY_KEY);
+
     if (!raw) return [];
 
     const parsed: unknown = JSON.parse(raw);
+
     if (!Array.isArray(parsed)) return [];
 
     return parsed.flatMap((item): Task[] => {
       if (typeof item !== "object" || item === null) return [];
-      const old = item as { id?: unknown; title?: unknown; done?: unknown; createdAt?: unknown; remindAt?: unknown };
-      if (typeof old.id !== "string" || typeof old.title !== "string") return [];
+
+      const old = item as {
+        id?: unknown;
+        title?: unknown;
+        done?: unknown;
+        createdAt?: unknown;
+        remindAt?: unknown;
+      };
+
+      if (typeof old.id !== "string" || typeof old.title !== "string") {
+        return [];
+      }
 
       const created = typeof old.createdAt === "number" ? old.createdAt : Date.now();
+
       const remind = typeof old.remindAt === "number" ? new Date(old.remindAt) : null;
+
       const date = dateKey(remind ?? new Date(created));
 
       return [
@@ -289,13 +349,33 @@ export function newId(): string {
 
 export const TASKS_CHANGED_EVENT = "tasks-changed";
 
+/** Hasil pembacaan data dari Rust beserta revision saat dibaca. */
+export interface TasksLoadResult {
+  data: string;
+  revision: string;
+}
+
+/** Hasil penyimpanan dari Rust. */
+export interface TasksSaveResult {
+  saved: boolean;
+  revision: string;
+  currentData: string | null;
+}
+
 export interface TasksChanged {
   source: string;
   data: string;
+  revision: string;
 }
 
 export const tasksIpc = {
-  load: () => invoke<string>("tasks_load"),
-  save: (data: string) => invoke<void>("tasks_save", { data }),
+  load: () => invoke<TasksLoadResult>("tasks_load"),
+
+  save: (data: string, expectedRevision: string) =>
+    invoke<TasksSaveResult>("tasks_save", {
+      data,
+      expectedRevision,
+    }),
+
   openWindow: () => invoke<void>("tasks_open_window"),
 };
