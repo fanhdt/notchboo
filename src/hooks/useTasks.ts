@@ -318,21 +318,19 @@ export function useTaskStore(): TaskStoreApi {
           return;
         }
 
-        let result = await tasksIpc.load();
+        let result;
 
-        if (!active) {
-          return;
-        }
-
-        // Jika ada event selama pemuatan, baca ulang data backend.
-        if (pendingRemote) {
+        // Ulangi pembacaan jika ada perubahan remote selama proses load.
+        // Event yang masuk ketika load berlangsung akan mengaktifkan
+        // pendingRemote sehingga pembacaan berikutnya mengambil data terbaru.
+        do {
           pendingRemote = false;
           result = await tasksIpc.load();
-        }
 
-        if (!active) {
-          return;
-        }
+          if (!active) {
+            return;
+          }
+        } while (pendingRemote);
 
         let initial = result.data ? parseStore(result.data) : null;
 
