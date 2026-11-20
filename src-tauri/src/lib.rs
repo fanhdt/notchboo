@@ -52,15 +52,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(island::IslandShared::default())
         .manage(foreground::ForegroundShared::default())
-        .manage(tray::PeekState::default())
         .manage(monitor::MonitorControl::default())
         .setup(|app| {
             // Inisialisasi centralized settings.
             let settings_path = app
-    .path()
-    .app_config_dir()
-    .map_err(std::io::Error::other)?
-    .join("settings.json");
+                .path()
+                .app_config_dir()
+                .map_err(std::io::Error::other)?
+                .join("settings.json");
 
             let settings_store =
                 settings_store::SettingsStore::new(settings_path);
@@ -110,7 +109,6 @@ pub fn run() {
 
             // Existing commands
             foreground::get_foreground_busy,
-            tray::get_peek_mode,
             island::set_island_hitbox,
             lyrics::get_lyrics,
             media::get_media_info,

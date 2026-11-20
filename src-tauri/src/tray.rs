@@ -4,13 +4,9 @@
 //! Menu tray menyediakan kontrol Peek Behavior, autostart, notifikasi uji,
 //! dan keluar. Preferensi Peek Behavior disimpan melalui centralized SettingsStore.
 
-use std::{
-    fs,
-    path::PathBuf,
-    sync::{Mutex, MutexGuard},
-};
+use std::fs;
+use std::path::PathBuf;
 
-use serde::Serialize;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
@@ -23,8 +19,6 @@ use crate::{
     settings_store::SettingsStore,
 };
 
-/// Event kompatibilitas untuk frontend yang belum dimigrasikan.
-const MODE_EVENT: &str = "peek-mode-changed";
 const LEGACY_SETTINGS_FILE: &str = "peek-mode.txt";
 
 const ID_WHEN_BUSY: &str = "peek_when_busy";
@@ -35,8 +29,7 @@ const ID_TEST_NOTICE: &str = "test_notice";
 const ID_QUIT: &str = "quit";
 
 /// Perilaku Island: kapan bersembunyi ke atas atau tetap terbuka.
-#[derive(Clone, Copy, Default, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub enum PeekMode {
     /// Bersembunyi saat aplikasi lain aktif.
     #[default]
@@ -72,24 +65,6 @@ impl PeekMode {
             Self::Standby => PeekBehavior::Standby,
         }
     }
-}
-
-#[derive(Default)]
-pub struct PeekState {
-    mode: Mutex<PeekMode>,
-}
-
-fn lock_mode(state: &PeekState) -> MutexGuard<'_, PeekMode> {
-    state
-        .mode
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
-/// Mode saat ini, untuk kompatibilitas frontend lama.
-#[tauri::command]
-pub fn get_peek_mode(state: tauri::State<'_, PeekState>) -> PeekMode {
-    *lock_mode(&state)
 }
 
 fn legacy_settings_path(app: &AppHandle) -> Option<PathBuf> {
@@ -169,7 +144,7 @@ fn load_mode(app: &AppHandle) -> PeekMode {
     current_mode
 }
 
-/// Menyimpan perubahan ke centralized settings sebelum menerapkan mode runtime.
+/// Menyimpan perubahan ke centralized settings sebelum memperbarui menu tray.
 fn apply_mode(
     app: &AppHandle,
     mode: PeekMode,
@@ -192,8 +167,6 @@ fn apply_mode(
         return;
     }
 
-    *lock_mode(&app.state::<PeekState>()) = mode;
-
     // Item centang disetel ulang secara eksplisit.
     for (item_mode, item) in checks {
         let _ = item.set_checked(*item_mode == mode);
@@ -203,17 +176,11 @@ fn apply_mode(
     if let Err(error) = app.emit(SETTINGS_CHANGED_EVENT, settings) {
         eprintln!("[Settings] Gagal mengirim event settings: {error}");
     }
-
-    // Dipertahankan sementara untuk frontend yang belum dimigrasikan.
-    if let Err(error) = app.emit(MODE_EVENT, mode) {
-        eprintln!("[Settings] Gagal mengirim event Peek Behavior: {error}");
-    }
 }
 
 /// Membuat ikon tray dan memuat mode tersimpan.
 pub fn init(app: &AppHandle) -> tauri::Result<()> {
     let mode = load_mode(app);
-    *lock_mode(&app.state::<PeekState>()) = mode;
 
     let make = |id: &str, label: &str, item_mode: PeekMode| {
         CheckMenuItem::with_id(
