@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
+import { clearLegacySoundSettings, readLegacySoundSettings } from "../lib/sound";
+import { clearLegacyTimerSettings, readLegacyTimerSettings } from "../lib/legacyTimerSettings";
 import { loadSettings, onSettingsChanged, saveSettings, type AppSettings } from "../lib/settings";
-
 import { SettingsContext, type SettingsContextValue } from "../hooks/useSettings";
 
 interface SettingsProviderProps {
@@ -14,6 +15,90 @@ function getErrorMessage(reason: unknown): string {
   }
 
   return typeof reason === "string" ? reason : "Gagal menyimpan pengaturan.";
+}
+
+function isDefaultSoundSettings(sound: AppSettings["features"]["sound"]): boolean {
+  return sound.volume === 0.7 && sound.pomodoro === "beep" && sound.water === "chime" && sound.task === "bell" && sound.message === "pop" && sound.repeat === true;
+}
+
+function isDefaultPomodoroSettings(pomodoro: AppSettings["features"]["pomodoro"]): boolean {
+  return pomodoro.mode === "pomodoro" && pomodoro.flowRatio === 4;
+}
+
+async function migrateLegacySettings(initial: AppSettings): Promise<AppSettings> {
+  const legacySound = readLegacySoundSettings();
+  const legacyTimer = readLegacyTimerSettings();
+
+  const hasLegacySound = legacySound !== null;
+  const hasLegacyTimer = legacyTimer.mode !== null || legacyTimer.flowRatio !== null;
+
+  if (!hasLegacySound && !hasLegacyTimer) {
+    return initial;
+  }
+
+  let migrated = false;
+
+  const next: AppSettings = {
+    ...initial,
+    features: {
+      ...initial.features,
+      sound: initial.features.sound,
+      pomodoro: initial.features.pomodoro,
+    },
+  };
+
+  // Migrasikan suara hanya jika konfigurasi pusat masih default.
+  if (legacySound && isDefaultSoundSettings(initial.features.sound)) {
+    next.features.sound = {
+      volume: legacySound.volume,
+      pomodoro: legacySound.sounds.pomodoro,
+      water: legacySound.sounds.water,
+      task: legacySound.sounds.task,
+      message: legacySound.sounds.message,
+      repeat: legacySound.repeat,
+    };
+
+    migrated = true;
+  }
+
+  // Migrasikan timer hanya jika konfigurasi pusat masih default.
+  if (hasLegacyTimer && isDefaultPomodoroSettings(initial.features.pomodoro)) {
+    next.features.pomodoro = {
+      ...initial.features.pomodoro,
+      ...(legacyTimer.mode !== null ? { mode: legacyTimer.mode } : {}),
+      ...(legacyTimer.flowRatio !== null ? { flowRatio: legacyTimer.flowRatio } : {}),
+    };
+
+    migrated = true;
+  }
+
+  if (migrated) {
+    // Simpan seluruh hasil migrasi dalam satu operasi.
+    const saved = await saveSettings(next);
+
+    // Hapus data lama hanya setelah penyimpanan berhasil.
+    if (hasLegacySound) {
+      clearLegacySoundSettings();
+    }
+
+    if (hasLegacyTimer) {
+      clearLegacyTimerSettings();
+    }
+
+    return saved;
+  }
+
+  // Konfigurasi pusat sudah memiliki prioritas.
+  // Data lama boleh dibersihkan karena tidak digunakan.
+  if (hasLegacySound) {
+    clearLegacySoundSettings();
+  }
+
+  if (hasLegacyTimer) {
+    clearLegacyTimerSettings();
+  }
+
+  return initial;
 }
 
 export function SettingsProvider({ children }: SettingsProviderProps) {
@@ -156,13 +241,33 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
           return;
         }
 
+        let resolved = initial;
+        let migrationFailed = false;
+
+        try {
+          resolved = await migrateLegacySettings(initial);
+        } catch (reason) {
+          migrationFailed = true;
+
+          console.error("[Settings] Legacy settings migration failed:", reason);
+        }
+
+        if (!active) {
+          return;
+        }
+
         const remote = pendingRemote.current;
         pendingRemote.current = null;
 
-        apply(remote ?? initial);
+        apply(remote ?? resolved);
         loadedRef.current = true;
         setLoaded(true);
-        setError(null);
+
+        if (migrationFailed) {
+          setError("Migrasi pengaturan lama gagal. Data lama tetap dipertahankan.");
+        } else {
+          setError(null);
+        }
       } catch (reason) {
         if (active) {
           setError(getErrorMessage(reason));
