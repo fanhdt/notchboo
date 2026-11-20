@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
 import { clearLegacySoundSettings, readLegacySoundSettings } from "../lib/sound";
 import { clearLegacyTimerSettings, readLegacyTimerSettings } from "../lib/legacyTimerSettings";
+import { readLegacyWaterSettings } from "../lib/legacyWaterSettings";
 import { loadSettings, onSettingsChanged, saveSettings, type AppSettings } from "../lib/settings";
 import { SettingsContext, type SettingsContextValue } from "../hooks/useSettings";
 
@@ -25,14 +26,20 @@ function isDefaultPomodoroSettings(pomodoro: AppSettings["features"]["pomodoro"]
   return pomodoro.mode === "pomodoro" && pomodoro.flowRatio === 4;
 }
 
+function isDefaultWaterSettings(water: AppSettings["features"]["waterReminder"]): boolean {
+  return water.enabled === true && water.mode === "smart" && water.intervalMin === 60 && water.goalMl === 2000 && water.glassMl === 250 && water.startHour === 8 && water.endHour === 21;
+}
+
 async function migrateLegacySettings(initial: AppSettings): Promise<AppSettings> {
   const legacySound = readLegacySoundSettings();
   const legacyTimer = readLegacyTimerSettings();
+  const legacyWater = readLegacyWaterSettings();
 
   const hasLegacySound = legacySound !== null;
   const hasLegacyTimer = legacyTimer.mode !== null || legacyTimer.flowRatio !== null;
+  const hasLegacyWater = legacyWater !== null;
 
-  if (!hasLegacySound && !hasLegacyTimer) {
+  if (!hasLegacySound && !hasLegacyTimer && !hasLegacyWater) {
     return initial;
   }
 
@@ -44,6 +51,7 @@ async function migrateLegacySettings(initial: AppSettings): Promise<AppSettings>
       ...initial.features,
       sound: initial.features.sound,
       pomodoro: initial.features.pomodoro,
+      waterReminder: initial.features.waterReminder,
     },
   };
 
@@ -72,11 +80,19 @@ async function migrateLegacySettings(initial: AppSettings): Promise<AppSettings>
     migrated = true;
   }
 
+  // Migrasikan Water Reminder hanya jika konfigurasi pusat masih default.
+  if (legacyWater && isDefaultWaterSettings(initial.features.waterReminder)) {
+    next.features.waterReminder = {
+      ...initial.features.waterReminder,
+      ...legacyWater,
+    };
+
+    migrated = true;
+  }
+
   if (migrated) {
-    // Simpan seluruh hasil migrasi dalam satu operasi.
     const saved = await saveSettings(next);
 
-    // Hapus data lama hanya setelah penyimpanan berhasil.
     if (hasLegacySound) {
       clearLegacySoundSettings();
     }
@@ -85,6 +101,7 @@ async function migrateLegacySettings(initial: AppSettings): Promise<AppSettings>
       clearLegacyTimerSettings();
     }
 
+    // Jangan hapus notchboo.water karena masih menyimpan riwayat minum.
     return saved;
   }
 
