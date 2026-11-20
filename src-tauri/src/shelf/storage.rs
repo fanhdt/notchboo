@@ -202,7 +202,21 @@ impl Storage {
             return Err(ImportError::Io(error.to_string()));
         }
 
-        let size_bytes = fs::metadata(&destination).map(|m| m.len()).unwrap_or(metadata.len());
+        let size_bytes = match fs::metadata(&destination) {
+            Ok(metadata) => metadata.len(),
+            Err(error) => {
+                let _ = fs::remove_dir_all(&tmp_dir);
+                return Err(ImportError::Io(error.to_string()));
+            }
+        };
+
+        // Periksa ulang ukuran hasil salinan untuk menangani sumber yang berubah
+        // setelah pemeriksaan metadata awal.
+        if size_bytes > self.max_file_bytes {
+            let _ = fs::remove_dir_all(&tmp_dir);
+            return Err(ImportError::TooLarge { limit: self.max_file_bytes });
+        }
+
         let extension = extension_of(&stored_name);
         Ok(Staged { tmp_dir, stored_name, original_name, size_bytes, extension })
     }
