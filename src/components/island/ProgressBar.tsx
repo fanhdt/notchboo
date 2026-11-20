@@ -93,6 +93,16 @@ export default function ProgressBar({ playback, onSeek, compact = false }: Props
     paint(ms);
   }
 
+  function handlePointerCancel(e: React.PointerEvent<HTMLDivElement>) {
+    e.stopPropagation();
+
+    if (dragRef.current === null) return;
+
+    dragRef.current = null;
+    setDragging(false);
+    paint(currentPosition(playback));
+  }
+
   function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
     if (dragRef.current === null) return;
     const ms = msFromPointer(e.clientX);
@@ -127,7 +137,7 @@ export default function ProgressBar({ playback, onSeek, compact = false }: Props
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
       >
         <div className={`relative w-full rounded-full bg-white/20 ${compact ? "h-0.75" : "h-1"}`}>
           {/* Lebar dan posisi knob diatur oleh `paint`, bukan oleh render React. */}

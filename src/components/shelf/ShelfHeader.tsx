@@ -33,7 +33,7 @@ export function TitleBar({ settingsOpen, onToggleSettings }: { settingsOpen: boo
 export function SearchBar({ value, onChange, pinnedOnly, onTogglePinned }: { value: string; onChange: (value: string) => void; pinnedOnly: boolean; onTogglePinned: () => void }) {
   return (
     <div className="flex items-center gap-2 px-3 pt-3">
-      <label className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2.5 focus-within:border-accent/50">
+      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2.5 focus-within:border-accent/50">
         <Icon name="search" className="h-4 w-4 text-white/40" />
         <input
           type="search"
@@ -48,7 +48,7 @@ export function SearchBar({ value, onChange, pinnedOnly, onTogglePinned }: { val
             <Icon name="close" className="h-3.5 w-3.5" />
           </button>
         )}
-      </label>
+      </div>
 
       <button
         type="button"

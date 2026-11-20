@@ -1,5 +1,4 @@
-import { useState } from "react";
-
+import { useEffect, useRef, useState } from "react";
 import { useItemActions, useShelfItems } from "../../hooks/useShelf";
 import type { ItemKind, ShelfItem } from "../../lib/shelf";
 import { EmptyState, ErrorBanner, LoadingState, Toast } from "./Feedback";
@@ -41,19 +40,33 @@ export default function TextItemList({ kind, query, pinnedOnly }: Props) {
   const copy = COPY[kind];
   const filtering = query.trim() !== "" || pinnedOnly;
 
+  const editRequest = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      editRequest.current += 1;
+    };
+  }, []);
+
   async function startEdit(item: ShelfItem) {
+    const request = ++editRequest.current;
+
     // Daftar hanya membawa potongan awal isi; editor harus memegang isi lengkap.
     const full = await actions.loadFull(item);
+
+    if (request !== editRequest.current) return;
     if (full) setEditor({ item: full });
   }
 
   function startCreate() {
+    editRequest.current += 1;
     list.dismissActionError();
     actions.clearFeedback();
     setEditor({ item: null });
   }
 
   function closeEditor() {
+    editRequest.current += 1;
     list.dismissActionError();
     setEditor(null);
   }
