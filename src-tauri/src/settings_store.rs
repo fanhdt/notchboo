@@ -2,14 +2,18 @@
 use std::{
     fs,
     io::Write,
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+    path::PathBuf,
+    sync::{
+        Mutex, MutexGuard,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use crate::settings::{AppSettings, SettingsError};
 
 static FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
+static SETTINGS_LOCK: Mutex<()> = Mutex::new(());
 
 /// Mengelola persistence konfigurasi aplikasi.
 pub struct SettingsStore {
@@ -21,17 +25,24 @@ impl SettingsStore {
         Self { path: path.into() }
     }
 
-    /// Memuat konfigurasi.
-    ///
-    /// - File belum ada: buat konfigurasi default.
-    /// - File rusak atau tidak valid: backup file lama, lalu pulihkan default.
-    /// - Versi lebih baru: hentikan proses tanpa menimpa file.
+    fn lock() -> MutexGuard<'static, ()> {
+        SETTINGS_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Memuat konfigurasi dengan operasi yang terserialisasi.
     pub fn load_or_default(&self) -> Result<AppSettings, String> {
+        let _guard = Self::lock();
+        self.load_or_default_unlocked()
+    }
+
+    fn load_or_default_unlocked(&self) -> Result<AppSettings, String> {
         let raw = match fs::read_to_string(&self.path) {
             Ok(raw) => raw,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 let settings = AppSettings::default();
-                self.save(&settings)?;
+                self.save_unlocked(&settings)?;
                 return Ok(settings);
             }
             Err(error) => {
@@ -61,8 +72,13 @@ impl SettingsStore {
         }
     }
 
-    /// Memvalidasi dan menyimpan konfigurasi secara atomik.
+    /// Memvalidasi dan menyimpan konfigurasi dengan operasi terserialisasi.
     pub fn save(&self, settings: &AppSettings) -> Result<(), String> {
+        let _guard = Self::lock();
+        self.save_unlocked(settings)
+    }
+
+    fn save_unlocked(&self, settings: &AppSettings) -> Result<(), String> {
         settings
             .validate()
             .map_err(|error| format!("Konfigurasi tidak valid: {error}"))?;
@@ -94,7 +110,7 @@ impl SettingsStore {
         );
 
         let settings = AppSettings::default();
-        self.save(&settings)?;
+        self.save_unlocked(&settings)?;
 
         Ok(settings)
     }
@@ -154,10 +170,7 @@ impl SettingsStore {
 
         for _ in 0..100 {
             let counter = FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
-
-            let temp_path = parent.join(format!(
-                ".settings-{counter}.tmp"
-            ));
+            let temp_path = parent.join(format!(".settings-{counter}.tmp"));
 
             let mut file = match fs::OpenOptions::new()
                 .write(true)
@@ -181,7 +194,6 @@ impl SettingsStore {
 
             if let Err(error) = write_result {
                 let _ = fs::remove_file(&temp_path);
-
                 return Err(format!(
                     "Tidak bisa menulis temporary file konfigurasi: {error}"
                 ));
@@ -189,9 +201,8 @@ impl SettingsStore {
 
             drop(file);
 
-            if let Err(error) = fs::rename(&temp_path, &self.path) {
+            if let Err(error) = replace_file(&temp_path, &self.path) {
                 let _ = fs::remove_file(&temp_path);
-
                 return Err(format!(
                     "Tidak bisa mengganti file konfigurasi {}: {error}",
                     self.path.display()
@@ -205,10 +216,48 @@ impl SettingsStore {
     }
 }
 
+/// Mengganti file tujuan secara atomik sesuai platform.
+#[cfg(windows)]
+fn replace_file(source: &std::path::Path, destination: &std::path::Path) -> std::io::Result<()> {
+    use std::{os::windows::ffi::OsStrExt, ptr};
+
+    use windows_sys::Win32::Storage::FileSystem::{
+        MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
+    };
+
+    let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+    let destination: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+
+    // SAFETY: Kedua path merupakan UTF-16 null-terminated dan hidup selama pemanggilan.
+    let result = unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+
+    if result == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        let _ = ptr::null::<u16>();
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+fn replace_file(source: &std::path::Path, destination: &std::path::Path) -> std::io::Result<()> {
+    fs::rename(source, destination)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
+    use std::{fs, thread};
 
     struct TestDirectory(PathBuf);
 
@@ -258,8 +307,24 @@ mod tests {
         store.save(&settings).unwrap();
 
         let loaded = store.load_or_default().unwrap();
-
         assert_eq!(loaded, settings);
+    }
+
+    #[test]
+    fn existing_file_can_be_atomically_replaced() {
+        let dir = TestDirectory::new();
+        let path = dir.settings_path();
+        let store = SettingsStore::new(&path);
+
+        let first = AppSettings::default();
+        store.save(&first).unwrap();
+
+        let mut second = first.clone();
+        second.appearance.animations_enabled = false;
+
+        store.save(&second).unwrap();
+
+        assert_eq!(store.load_or_default().unwrap(), second);
     }
 
     #[test]
@@ -336,5 +401,34 @@ mod tests {
 
         assert!(store.save(&settings).is_err());
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn concurrent_saves_do_not_corrupt_the_file() {
+        let dir = TestDirectory::new();
+        let path = dir.settings_path();
+
+        let workers: Vec<_> = (0..8)
+            .map(|index| {
+                let path = path.clone();
+
+                thread::spawn(move || {
+                    let store = SettingsStore::new(path);
+                    let mut settings = AppSettings::default();
+                    settings.features.sound.volume = index as f32 / 10.0;
+                    store.save(&settings).unwrap();
+                })
+            })
+            .collect();
+
+        for worker in workers {
+            worker.join().unwrap();
+        }
+
+        let store = SettingsStore::new(&path);
+        let loaded = store.load_or_default().unwrap();
+
+        assert!(loaded.features.sound.volume.is_finite());
+        assert!((0.0..=0.7).contains(&loaded.features.sound.volume));
     }
 }

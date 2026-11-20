@@ -30,6 +30,41 @@ export interface SoundSettings {
 /** Jeda antar pengulangan suara alarm. */
 export const ALARM_REPEAT_MS = 6000;
 
+/**
+ * Membaca preferensi suara dari penyimpanan lama.
+ * Mengembalikan null jika key tidak ada atau datanya rusak.
+ */
+export function readLegacySoundSettings(): SoundSettings | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed: unknown = JSON.parse(raw);
+
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return null;
+    }
+
+    return loadSoundSettings();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Menghapus preferensi lama setelah migrasi berhasil.
+ */
+export function clearLegacySoundSettings(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (error) {
+    console.warn("[Settings] Gagal menghapus legacy sound settings:", error);
+  }
+}
+
 const STORAGE_KEY = "notchboo.sound";
 
 const DEFAULTS: SoundSettings = {

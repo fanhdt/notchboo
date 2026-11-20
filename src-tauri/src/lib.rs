@@ -7,9 +7,11 @@ mod lyrics;
 mod monitor;
 mod notifications;
 mod settings;
+mod settings_commands;
 mod settings_store;
 
-// Bagian yang memakai API sistem punya satu berkas per platform; bentuk publiknya sama.
+// Bagian yang memakai API sistem punya satu berkas per platform;
+// bentuk publiknya sama.
 #[cfg(windows)]
 mod foreground;
 #[cfg(target_os = "macos")]
@@ -30,6 +32,7 @@ mod power;
 
 #[cfg(target_os = "macos")]
 mod mac;
+
 mod shelf;
 mod tasks;
 mod tray;
@@ -52,6 +55,22 @@ pub fn run() {
         .manage(tray::PeekState::default())
         .manage(monitor::MonitorControl::default())
         .setup(|app| {
+            // Inisialisasi centralized settings.
+            let settings_path = app
+    .path()
+    .app_config_dir()
+    .map_err(std::io::Error::other)?
+    .join("settings.json");
+
+            let settings_store =
+                settings_store::SettingsStore::new(settings_path);
+
+            settings_store
+                .load_or_default()
+                .map_err(std::io::Error::other)?;
+
+            app.manage(settings_store);
+
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
@@ -85,6 +104,11 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // Centralized settings
+            settings_commands::settings_load,
+            settings_commands::settings_save,
+
+            // Existing commands
             foreground::get_foreground_busy,
             tray::get_peek_mode,
             island::set_island_hitbox,
