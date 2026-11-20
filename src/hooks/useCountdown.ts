@@ -49,8 +49,17 @@ export function useCountdown(durationMs: number, onFinish: () => void) {
   }, [remainingMs]);
 
   const pause = useCallback(() => {
-    setRemainingMs(Math.max(0, endAt.current - Date.now()));
+    const left = endAt.current - Date.now();
+
     setRunning(false);
+
+    if (left <= 0) {
+      setRemainingMs(0);
+      onFinishRef.current();
+      return;
+    }
+
+    setRemainingMs(left);
   }, []);
 
   const reset = useCallback(() => {

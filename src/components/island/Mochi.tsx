@@ -478,18 +478,41 @@ export default function Mochi({ peeking = false }: MochiProps) {
   });
 
   // Cursor tracking
+  // Cursor tracking
   useEffect(() => {
-    const unlisten = listen<CursorMoved>("cursor-moved", ({ payload }) => {
-      lastActivity.current = Date.now();
+    let active = true;
+    let unlisten: (() => void) | undefined;
 
-      setMood("awake");
+    const initialize = async () => {
+      try {
+        const stopListening = await listen<CursorMoved>("cursor-moved", ({ payload }) => {
+          if (!active) return;
 
-      gazeX.set(payload.dx * GAZE_X);
-      gazeY.set(payload.dy * GAZE_Y);
-    });
+          lastActivity.current = Date.now();
+          setMood("awake");
+
+          gazeX.set(payload.dx * GAZE_X);
+          gazeY.set(payload.dy * GAZE_Y);
+        });
+
+        if (!active) {
+          stopListening();
+          return;
+        }
+
+        unlisten = stopListening;
+      } catch (error) {
+        if (active) {
+          console.error("[Mochi] Gagal memasang listener cursor:", error);
+        }
+      }
+    };
+
+    void initialize();
 
     return () => {
-      unlisten.then((stop) => stop());
+      active = false;
+      unlisten?.();
     };
   }, [gazeX, gazeY]);
 
