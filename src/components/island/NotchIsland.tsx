@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { memo } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 import type { IslandController } from "../../hooks/useIslandController";
 import { useIslandGeometry } from "../../hooks/useIslandGeometry";
@@ -39,6 +40,12 @@ export default function NotchIsland({ c }: { c: IslandController }) {
 
   const { notice, state, view, direction, timer } = c;
 
+  const openSettings = () => {
+    invoke("settings_open_window").catch((error) => {
+      console.error("Gagal membuka Settings:", error);
+    });
+  };
+
   return (
     <main className="flex h-full w-full items-start justify-center">
       <motion.div
@@ -73,12 +80,12 @@ export default function NotchIsland({ c }: { c: IslandController }) {
           ) : (
             /* EXPANDED MODE */
             <>
-              {/* Navigation */}
-              <div className="absolute left-1/2 top-1.5 z-20 -translate-x-1/2">
-                <IslandNav current={view} onSelect={c.selectPage} />
+              {/* TOP NAVIGATION */}
+              <div className="absolute inset-x-0 top-1.5 z-20 flex items-center justify-center">
+                <IslandNav current={view} onSelect={c.selectPage} onSettings={openSettings} />
               </div>
 
-              {/* Lyrics mode button */}
+              {/* LYRICS MODE BUTTON */}
               {view === "media" && c.hasLyrics && (
                 <div className="absolute bottom-2 right-8 z-20">
                   {c.lyricMode === "side" ? (
@@ -93,7 +100,7 @@ export default function NotchIsland({ c }: { c: IslandController }) {
                 </div>
               )}
 
-              {/* Page transition */}
+              {/* PAGE TRANSITION */}
               <div className="relative h-full w-full">
                 <AnimatePresence initial={false} custom={direction} mode="wait">
                   <motion.div

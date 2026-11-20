@@ -5,6 +5,7 @@ import { msUntilCountUpChange, msUntilCountdownChange } from "../lib/clock";
 export type TimerMode = "pomodoro" | "flow";
 export type FlowPhase = "focus" | "break";
 export type FlowRatio = 3 | 4 | 5;
+export const FLOW_RATIOS: FlowRatio[] = [3, 4, 5];
 
 const MIN_BREAK_MS = 60_000;
 

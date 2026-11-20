@@ -43,6 +43,7 @@ Product promise:
 The long-term product consists of the following capabilities:
 
 ### Foundation
+
 - Centralized Settings
 - Global keyboard shortcuts
 - Theme and appearance configuration
@@ -51,6 +52,7 @@ The long-term product consists of the following capabilities:
 - Backup and restore
 
 ### Productivity Core
+
 - Clipboard Manager
 - Clipboard history
 - Search and pinning
@@ -58,6 +60,7 @@ The long-term product consists of the following capabilities:
 - Quick Shelf integration
 
 ### Interaction Layer
+
 - Quick Launcher
 - Application search
 - File search
@@ -66,6 +69,7 @@ The long-term product consists of the following capabilities:
 - Quick actions
 
 ### Information Management
+
 - Notification Center
 - Notification history
 - Categories and priorities
@@ -73,6 +77,7 @@ The long-term product consists of the following capabilities:
 - Do Not Disturb
 
 ### Productivity Integration
+
 - Focus Mode
 - Tasks integration
 - Pomodoro integration
@@ -80,6 +85,7 @@ The long-term product consists of the following capabilities:
 - Focus statistics
 
 ### Existing Features to Preserve
+
 - Dynamic Island
 - Media Player
 - System Monitor
@@ -163,6 +169,7 @@ Verify actual file locations before making changes.
 Investigate and address confirmed problems involving:
 
 **Storage**
+
 - Concurrent writes.
 - Atomic persistence.
 - Data corruption.
@@ -170,6 +177,7 @@ Investigate and address confirmed problems involving:
 - Consistency between multiple windows.
 
 **Lifecycle**
+
 - Startup and shutdown behavior.
 - Background worker termination.
 - Event listener cleanup.
@@ -177,6 +185,7 @@ Investigate and address confirmed problems involving:
 - Resource cleanup.
 
 **Security**
+
 - Content Security Policy.
 - Filesystem access.
 - Command validation.
@@ -184,12 +193,14 @@ Investigate and address confirmed problems involving:
 - Notification and clipboard privacy.
 
 **Error Handling**
+
 - Standardize error propagation.
 - Avoid silent failures.
 - Provide useful diagnostic information.
 - Ensure one feature failure does not crash the entire application.
 
 **Performance**
+
 - Unnecessary polling.
 - Excessive React rendering.
 - Unnecessary background processing.
@@ -230,28 +241,33 @@ Build a centralized configuration system.
 ### Required Capabilities
 
 **General**
+
 - Startup behavior.
 - Background behavior.
 - General preferences.
 
 **Appearance**
+
 - Light, Dark, System theme.
 - Island appearance.
 - Animation preferences.
 - Transparency settings.
 
 **Feature Management**
+
 - Enable or disable features.
 - Store individual feature preferences.
 - Define default configurations.
 
 **Shortcuts**
+
 - Global shortcut registration.
 - Feature-specific shortcuts.
 - Shortcut conflict detection.
 - Default shortcut restoration.
 
 **Privacy**
+
 - Clipboard capture settings.
 - Notification access settings.
 - Application exclusions.
@@ -259,6 +275,7 @@ Build a centralized configuration system.
 - Clear stored data.
 
 **Data Management**
+
 - Export configuration.
 - Import configuration.
 - Backup and restore.
@@ -347,6 +364,7 @@ Do not implement image, file, rich-text, or cross-device clipboard synchronizati
 Implement a keyboard-first command palette.
 
 Requirements:
+[]
 
 - Global keyboard shortcut.
 - Search input.
@@ -426,6 +444,7 @@ When a focus session ends, restore the previous notification configuration corre
 Use modular architecture based on domain boundaries.
 
 Frontend responsibilities:
+
 - UI.
 - Interaction.
 - Presentation state.
@@ -433,6 +452,7 @@ Frontend responsibilities:
 - User feedback.
 
 Rust responsibilities:
+
 - Native operating system integration.
 - Background services.
 - Filesystem operations.
@@ -440,6 +460,7 @@ Rust responsibilities:
 - Business logic requiring native access.
 
 Tauri responsibilities:
+
 - Controlled frontend/backend communication.
 - Commands.
 - Events.
@@ -462,6 +483,7 @@ Read the relevant source files and understand the existing implementation.
 ### Step 2 — Analyze
 
 Identify:
+
 - Existing capabilities.
 - Missing capabilities.
 - Technical debt.
@@ -496,6 +518,7 @@ Use the actual scripts and commands available in the repository.
 ### Step 6 — Review
 
 Review:
+
 - Data integrity.
 - Security.
 - Error handling.
@@ -512,21 +535,27 @@ Update documentation when behavior, architecture, or configuration changes.
 After every implementation phase, provide a report containing:
 
 ### Summary
+
 What was implemented and why.
 
 ### Changes
+
 List files created, modified, or removed.
 
 ### Technical Decisions
+
 Explain important architecture and implementation decisions.
 
 ### Validation
+
 List commands executed and their actual results.
 
 ### Remaining Issues
+
 Document known limitations, unresolved problems, and technical debt.
 
 ### Next Steps
+
 Identify the next recommended implementation phase.
 
 Use this status classification:

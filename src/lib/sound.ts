@@ -132,6 +132,8 @@ export function saveSoundSettings(settings: SoundSettings) {
 }
 
 /** Memutar satu suara. `volume` 0..1. Tidak melakukan apa pun untuk "off" atau volume 0. */
+
+/** Memutar satu suara. `volume` 0..1. Tidak melakukan apa pun untuk "off" atau volume 0. */
 export function playSound(sound: AlarmSound, volume: number) {
   const normalizedVolume = normalizeVolume(volume);
 
@@ -139,81 +141,91 @@ export function playSound(sound: AlarmSound, volume: number) {
 
   let ctx: AudioContext | undefined;
 
-  try {
-    ctx = new AudioContext();
-    const audioContext = ctx;
+  const play = async () => {
+    try {
+      ctx = new AudioContext();
 
-    void audioContext.resume().catch(() => {
-      // Browser/WebView menolak aktivasi audio: abaikan.
-    });
+      const audioContext = ctx;
 
-    const t0 = audioContext.currentTime;
+      if (audioContext.state === "suspended") {
+        await audioContext.resume();
+      }
 
-    const master = audioContext.createGain();
-    master.gain.value = normalizedVolume * 0.3;
-    master.connect(audioContext.destination);
+      if (audioContext.state !== "running") {
+        await audioContext.close();
+        return;
+      }
 
-    const tone = (frequency: number, start: number, duration: number, type: OscillatorType = "sine", peak = 1) => {
-      const osc = audioContext.createOscillator();
-      const gain = audioContext.createGain();
+      const t0 = audioContext.currentTime;
 
-      osc.type = type;
-      osc.frequency.value = frequency;
+      const master = audioContext.createGain();
+      master.gain.value = normalizedVolume * 0.3;
+      master.connect(audioContext.destination);
 
-      gain.gain.setValueAtTime(0.0001, t0 + start);
-      gain.gain.exponentialRampToValueAtTime(peak, t0 + start + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + start + duration);
+      const tone = (frequency: number, start: number, duration: number, type: OscillatorType = "sine", peak = 1) => {
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
 
-      osc.connect(gain).connect(master);
-      osc.start(t0 + start);
-      osc.stop(t0 + start + duration + 0.05);
-    };
+        osc.type = type;
+        osc.frequency.value = frequency;
 
-    let total = 0.7;
+        gain.gain.setValueAtTime(0.0001, t0 + start);
+        gain.gain.exponentialRampToValueAtTime(peak, t0 + start + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + start + duration);
 
-    switch (sound) {
-      case "beep":
-        tone(880, 0, 0.6);
-        break;
+        osc.connect(gain).connect(master);
+        osc.start(t0 + start);
+        osc.stop(t0 + start + duration + 0.05);
+      };
 
-      case "chime":
-        tone(1047, 0, 0.7);
-        tone(1319, 0.18, 0.9);
-        total = 1.2;
-        break;
+      let total = 0.7;
 
-      case "bell":
-        tone(660, 0, 1.6);
-        tone(1320, 0, 1.0, "sine", 0.4);
-        tone(1850, 0, 0.6, "sine", 0.2);
-        total = 1.7;
-        break;
+      switch (sound) {
+        case "beep":
+          tone(880, 0, 0.6);
+          break;
 
-      case "digital":
-        [0, 0.18, 0.36].forEach((start) => tone(1000, start, 0.1, "square", 0.5));
-        total = 0.6;
-        break;
+        case "chime":
+          tone(1047, 0, 0.7);
+          tone(1319, 0.18, 0.9);
+          total = 1.2;
+          break;
 
-      case "pop":
-        tone(740, 0, 0.12);
-        tone(988, 0.09, 0.22);
-        total = 0.5;
-        break;
+        case "bell":
+          tone(660, 0, 1.6);
+          tone(1320, 0, 1.0, "sine", 0.4);
+          tone(1850, 0, 0.6, "sine", 0.2);
+          total = 1.7;
+          break;
+
+        case "digital":
+          [0, 0.18, 0.36].forEach((start) => tone(1000, start, 0.1, "square", 0.5));
+          total = 0.6;
+          break;
+
+        case "pop":
+          tone(740, 0, 0.12);
+          tone(988, 0.09, 0.22);
+          total = 0.5;
+          break;
+      }
+
+      window.setTimeout(
+        () => {
+          if (audioContext.state !== "closed") {
+            void audioContext.close().catch(() => {});
+          }
+        },
+        (total + 0.3) * 1000,
+      );
+    } catch (error) {
+      if (ctx && ctx.state !== "closed") {
+        void ctx.close().catch(() => {});
+      }
+
+      console.warn("[Sound] Gagal memutar audio:", error);
     }
+  };
 
-    setTimeout(
-      () => {
-        void audioContext.close().catch(() => {
-          // Context sudah tertutup atau gagal ditutup.
-        });
-      },
-      (total + 0.3) * 1000,
-    );
-  } catch {
-    if (ctx && ctx.state !== "closed") {
-      void ctx.close().catch(() => {});
-    }
-
-    // Audio tidak tersedia: abaikan.
-  }
+  void play();
 }

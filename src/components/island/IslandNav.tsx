@@ -1,5 +1,6 @@
 /** Halaman island, berurutan seperti di rel ikon (atas ke bawah). */
 export const ISLAND_PAGES = ["media", "system", "pomodoro", "water", "tasks", "shelf", "sound"] as const;
+
 export type IslandView = (typeof ISLAND_PAGES)[number];
 
 const NAV: Record<IslandView, { label: string; path: string }> = {
@@ -36,14 +37,16 @@ const NAV: Record<IslandView, { label: string; path: string }> = {
 type Props = {
   current: IslandView;
   onSelect: (view: IslandView) => void;
+  onSettings: () => void;
 };
 
-/** Baris ikon horizontal untuk pindah halaman island dengan satu klik. */
-export default function IslandNav({ current, onSelect }: Props) {
+/** Baris ikon horizontal untuk navigasi island dan pengaturan. */
+export default function IslandNav({ current, onSelect, onSettings }: Props) {
   return (
-    <nav aria-label="Halaman island" className="flex flex-row gap-1">
+    <nav aria-label="Navigasi island" className="flex flex-row items-center gap-1">
       {ISLAND_PAGES.map((view) => {
         const active = view === current;
+
         return (
           <button
             key={view}
@@ -52,7 +55,7 @@ export default function IslandNav({ current, onSelect }: Props) {
             aria-label={NAV[view].label}
             aria-current={active ? "page" : undefined}
             onClick={(event) => {
-              event.stopPropagation(); // klik di island biasa menutup island
+              event.stopPropagation();
               onSelect(view);
             }}
             className={`flex h-5.5 w-5.5 items-center justify-center rounded-full transition-colors ${active ? "bg-white/20 text-white" : "text-white/45 hover:bg-white/15 hover:text-white active:bg-white/25"}`}
@@ -63,6 +66,25 @@ export default function IslandNav({ current, onSelect }: Props) {
           </button>
         );
       })}
+
+      {/* Separator */}
+      <div className="mx-1 h-3.5 w-px bg-white/20" />
+
+      {/* Settings */}
+      <button
+        type="button"
+        title="Pengaturan"
+        aria-label="Pengaturan"
+        onClick={(event) => {
+          event.stopPropagation();
+          onSettings();
+        }}
+        className="flex h-5.5 w-5.5 items-center justify-center rounded-full text-white/60 transition-colors hover:bg-white/15 hover:text-white active:bg-white/25"
+      >
+        <svg viewBox="0 0 24 24" className="h-3 w-3 fill-current">
+          <path d="M19.14 12.94a7.5 7.5 0 0 0 .05-1.88l2.03-1.58-2-3.46-2.39.96a7.3 7.3 0 0 0-1.63-.94L14.84 3h-4l-.36 3.04a7.3 7.3 0 0 0-1.63.94l-2.39-.96-2 3.46 2.03 1.58a7.5 7.5 0 0 0 0 1.88l-2.03 1.58 2 3.46 2.39-.96c.5.4 1.04.71 1.63.94L10.84 21h4l.36-3.04c.59-.23 1.13-.54 1.63-.94l2.39.96 2-3.46zM12.84 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7" />
+        </svg>
+      </button>
     </nav>
   );
 }

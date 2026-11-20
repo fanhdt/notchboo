@@ -83,10 +83,8 @@ export function useSoundSettings(): SoundSettingsApi {
           },
         },
       }));
-
-      playSound(sound, settings.volume);
     },
-    [loaded, settings.volume, updateSettings],
+    [loaded, updateSettings],
   );
 
   const play = useCallback(

@@ -125,6 +125,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
   const [error, setError] = useState<string | null>(null);
 
   const latest = useRef<AppSettings | null>(null);
+  const lastSaved = useRef<AppSettings | null>(null);
   const loadedRef = useRef(false);
 
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
@@ -150,6 +151,9 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
           try {
             const saved = await saveSettings(snapshot);
 
+            // Selalu perbarui snapshot terakhir yang berhasil disimpan.
+            lastSaved.current = saved;
+
             if (latest.current && JSON.stringify(latest.current) === JSON.stringify(snapshot)) {
               apply(saved);
             }
@@ -157,6 +161,11 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
             setError(getErrorMessage(reason));
 
             console.error("[Settings] Failed to save settings:", reason);
+
+            // Rollback hanya jika tidak ada perubahan lebih baru.
+            if (latest.current && JSON.stringify(latest.current) === JSON.stringify(snapshot) && lastSaved.current) {
+              apply(lastSaved.current);
+            }
           } finally {
             pendingWrites.current = Math.max(0, pendingWrites.current - 1);
 
@@ -167,6 +176,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
               pendingRemote.current = null;
 
               if (remote) {
+                lastSaved.current = remote;
                 apply(remote);
               }
             }
@@ -214,6 +224,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
         return;
       }
 
+      lastSaved.current = result;
       apply(result);
       setError(null);
     } catch (reason) {
@@ -234,11 +245,13 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
           if (!active) {
             return;
           }
-
           if (!loadedRef.current || pendingWrites.current > 0) {
             pendingRemote.current = remote;
             return;
           }
+
+          lastSaved.current = remote;
+          apply(remote);
 
           apply(remote);
         });
@@ -275,8 +288,11 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
 
         const remote = pendingRemote.current;
         pendingRemote.current = null;
+        const initialSettings = remote ?? resolved;
 
-        apply(remote ?? resolved);
+        lastSaved.current = initialSettings;
+        apply(initialSettings);
+
         loadedRef.current = true;
         setLoaded(true);
 
