@@ -1,8 +1,8 @@
 
-//! Ikon Notchboo di system tray (area panah ke atas di kanan bawah Windows).
+//! Ikon Mochi di system tray.
 //!
-//! Menunya memilih mode tampilan island dan menyediakan tombol keluar. Pilihan disimpan di folder
-//! konfigurasi aplikasi supaya bertahan setelah aplikasi dibuka ulang.
+//! Menu tray menyediakan kontrol Peek Behavior, autostart, notifikasi uji,
+//! dan keluar. Preferensi Peek Behavior disimpan melalui centralized SettingsStore.
 
 use std::{
     fs,
@@ -14,12 +14,18 @@ use serde::Serialize;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Emitter, Manager, State, Wry,
+    AppHandle, Emitter, Manager, Wry,
 };
 
-/// Dikirim ke React setiap pilihan mode berubah (payload: `PeekMode`).
+use crate::{
+    settings::{AppSettings, PeekBehavior},
+    settings_commands::SETTINGS_CHANGED_EVENT,
+    settings_store::SettingsStore,
+};
+
+/// Event kompatibilitas untuk frontend yang belum dimigrasikan.
 const MODE_EVENT: &str = "peek-mode-changed";
-const SETTINGS_FILE: &str = "peek-mode.txt";
+const LEGACY_SETTINGS_FILE: &str = "peek-mode.txt";
 
 const ID_WHEN_BUSY: &str = "peek_when_busy";
 const ID_ALWAYS: &str = "peek_always";
@@ -28,34 +34,42 @@ const ID_AUTOSTART: &str = "autostart";
 const ID_TEST_NOTICE: &str = "test_notice";
 const ID_QUIT: &str = "quit";
 
-/// Perilaku island: kapan bersembunyi ke atas (peek) atau tetap terbuka (standby).
+/// Perilaku Island: kapan bersembunyi ke atas atau tetap terbuka.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PeekMode {
-    /// Bersembunyi hanya saat ada aplikasi lain yang aktif di depan.
+    /// Bersembunyi saat aplikasi lain aktif.
     #[default]
     WhenBusy,
-    /// Selalu bersembunyi, selama island tidak sedang dibuka.
+    /// Selalu bersembunyi saat Island tidak dibuka.
     Always,
-    /// Island selalu terbuka (expand) dan tidak menutup sendiri.
+    /// Island selalu terbuka.
     Standby,
 }
 
 impl PeekMode {
-    fn as_setting(self) -> &'static str {
-        match self {
-            Self::WhenBusy => "whenBusy",
-            Self::Always => "always",
-            Self::Standby => "standby",
-        }
-    }
-
-    fn from_setting(text: &str) -> Option<Self> {
-        match text.trim() {
+    fn from_setting(value: &str) -> Option<Self> {
+        match value.trim() {
             "whenBusy" => Some(Self::WhenBusy),
             "always" => Some(Self::Always),
             "standby" => Some(Self::Standby),
             _ => None,
+        }
+    }
+
+    fn from_behavior(value: PeekBehavior) -> Self {
+        match value {
+            PeekBehavior::WhenBusy => Self::WhenBusy,
+            PeekBehavior::Always => Self::Always,
+            PeekBehavior::Standby => Self::Standby,
+        }
+    }
+
+    fn into_behavior(self) -> PeekBehavior {
+        match self {
+            Self::WhenBusy => PeekBehavior::WhenBusy,
+            Self::Always => PeekBehavior::Always,
+            Self::Standby => PeekBehavior::Standby,
         }
     }
 }
@@ -72,88 +86,163 @@ fn lock_mode(state: &PeekState) -> MutexGuard<'_, PeekMode> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// Mode saat ini, untuk React saat pertama kali dimuat.
+/// Mode saat ini, untuk kompatibilitas frontend lama.
 #[tauri::command]
-pub fn get_peek_mode(state: State<'_, PeekState>) -> PeekMode {
+pub fn get_peek_mode(state: tauri::State<'_, PeekState>) -> PeekMode {
     *lock_mode(&state)
 }
 
-fn settings_path(app: &AppHandle) -> Option<PathBuf> {
+fn legacy_settings_path(app: &AppHandle) -> Option<PathBuf> {
     match app.path().app_config_dir() {
-        Ok(dir) => Some(dir.join(SETTINGS_FILE)),
+        Ok(dir) => Some(dir.join(LEGACY_SETTINGS_FILE)),
         Err(error) => {
-            eprintln!("gagal mendapatkan direktori konfigurasi peek mode: {error}");
+            eprintln!("[Settings] Gagal mendapatkan folder konfigurasi: {error}");
             None
         }
     }
 }
 
+/// Membaca centralized settings dan memigrasikan file lama jika diperlukan.
 fn load_mode(app: &AppHandle) -> PeekMode {
-    let Some(path) = settings_path(app) else {
-        return PeekMode::default();
+    let store = app.state::<SettingsStore>();
+
+    let mut settings = match store.load_or_default() {
+        Ok(settings) => settings,
+        Err(error) => {
+            eprintln!("[Settings] Gagal memuat Peek Behavior: {error}");
+            return PeekMode::default();
+        }
     };
 
-    match fs::read_to_string(&path) {
-        Ok(text) => match PeekMode::from_setting(&text) {
-            Some(mode) => mode,
-            None => {
+    let current_mode =
+        PeekMode::from_behavior(settings.appearance.island.peek_behavior);
+
+    let Some(legacy_path) = legacy_settings_path(app) else {
+        return current_mode;
+    };
+
+    match fs::read_to_string(&legacy_path) {
+        Ok(value) if current_mode == PeekMode::WhenBusy => {
+            if let Some(legacy_mode) = PeekMode::from_setting(&value) {
+                settings.appearance.island.peek_behavior =
+                    legacy_mode.into_behavior();
+
+                match store.save(&settings) {
+                    Ok(()) => {
+                        if let Err(error) = fs::remove_file(&legacy_path) {
+                            eprintln!(
+                                "[Settings] Gagal menghapus file Peek Behavior lama: {error}"
+                            );
+                        }
+
+                        return legacy_mode;
+                    }
+                    Err(error) => {
+                        eprintln!(
+                            "[Settings] Gagal memigrasikan Peek Behavior lama: {error}"
+                        );
+                    }
+                }
+            } else {
                 eprintln!(
-                    "konfigurasi peek mode tidak valid di {}. Menggunakan mode default.",
-                    path.display()
+                    "[Settings] Isi file Peek Behavior lama tidak valid. \
+                     File dipertahankan untuk pemeriksaan."
                 );
-                PeekMode::default()
             }
-        },
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => PeekMode::default(),
+        }
+        Ok(_) => {
+            // Centralized settings sudah memiliki nilai sendiri dan menjadi sumber utama.
+            if let Err(error) = fs::remove_file(&legacy_path) {
+                eprintln!(
+                    "[Settings] Gagal menghapus file Peek Behavior lama: {error}"
+                );
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => {
-            eprintln!("gagal membaca konfigurasi peek mode: {error}");
-            PeekMode::default()
+            eprintln!(
+                "[Settings] Gagal membaca file Peek Behavior lama: {error}"
+            );
         }
     }
+
+    current_mode
 }
 
-fn save_mode(app: &AppHandle, mode: PeekMode) {
-    let Some(path) = settings_path(app) else {
-        return;
-    };
+/// Menyimpan perubahan ke centralized settings sebelum menerapkan mode runtime.
+fn apply_mode(
+    app: &AppHandle,
+    mode: PeekMode,
+    checks: &[(PeekMode, CheckMenuItem<Wry>)],
+) {
+    let store = app.state::<SettingsStore>();
 
-    if let Some(dir) = path.parent() {
-        if let Err(error) = fs::create_dir_all(dir) {
-            eprintln!("gagal membuat direktori konfigurasi peek mode: {error}");
+    let mut settings: AppSettings = match store.load_or_default() {
+        Ok(settings) => settings,
+        Err(error) => {
+            eprintln!("[Settings] Gagal memuat konfigurasi: {error}");
             return;
         }
+    };
+
+    settings.appearance.island.peek_behavior = mode.into_behavior();
+
+    if let Err(error) = store.save(&settings) {
+        eprintln!("[Settings] Gagal menyimpan Peek Behavior: {error}");
+        return;
     }
 
-    // Gagal menyimpan bukan masalah fatal: pilihan tetap berlaku sampai aplikasi ditutup.
-    if let Err(error) = fs::write(&path, mode.as_setting()) {
-        eprintln!("gagal menyimpan konfigurasi peek mode: {error}");
-    }
-}
-
-fn apply_mode(app: &AppHandle, mode: PeekMode, checks: &[(PeekMode, CheckMenuItem<Wry>)]) {
     *lock_mode(&app.state::<PeekState>()) = mode;
-    save_mode(app, mode);
 
-    // Item centang bisa berubah sendiri saat diklik, jadi semua item disetel ulang secara eksplisit.
+    // Item centang disetel ulang secara eksplisit.
     for (item_mode, item) in checks {
         let _ = item.set_checked(*item_mode == mode);
     }
 
-    let _ = app.emit(MODE_EVENT, mode);
+    // Sinkronisasi seluruh SettingsProvider.
+    if let Err(error) = app.emit(SETTINGS_CHANGED_EVENT, settings) {
+        eprintln!("[Settings] Gagal mengirim event settings: {error}");
+    }
+
+    // Dipertahankan sementara untuk frontend yang belum dimigrasikan.
+    if let Err(error) = app.emit(MODE_EVENT, mode) {
+        eprintln!("[Settings] Gagal mengirim event Peek Behavior: {error}");
+    }
 }
 
-/// Membuat ikon tray dan memuat mode yang tersimpan. Dipanggil dari `setup`.
+/// Membuat ikon tray dan memuat mode tersimpan.
 pub fn init(app: &AppHandle) -> tauri::Result<()> {
     let mode = load_mode(app);
     *lock_mode(&app.state::<PeekState>()) = mode;
 
     let make = |id: &str, label: &str, item_mode: PeekMode| {
-        CheckMenuItem::with_id(app, id, label, true, mode == item_mode, None::<&str>)
+        CheckMenuItem::with_id(
+            app,
+            id,
+            label,
+            true,
+            mode == item_mode,
+            None::<&str>,
+        )
     };
 
-    let when_busy = make(ID_WHEN_BUSY, "Peek saat aplikasi lain aktif", PeekMode::WhenBusy)?;
-    let always = make(ID_ALWAYS, "Peek terus-menerus", PeekMode::Always)?;
-    let standby = make(ID_STANDBY, "Standby (selalu terbuka)", PeekMode::Standby)?;
+    let when_busy = make(
+        ID_WHEN_BUSY,
+        "Peek saat aplikasi lain aktif",
+        PeekMode::WhenBusy,
+    )?;
+
+    let always = make(
+        ID_ALWAYS,
+        "Peek terus-menerus",
+        PeekMode::Always,
+    )?;
+
+    let standby = make(
+        ID_STANDBY,
+        "Standby (selalu terbuka)",
+        PeekMode::Standby,
+    )?;
 
     let autostart_item = CheckMenuItem::with_id(
         app,
@@ -166,6 +255,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
 
     let test_notice =
         MenuItem::with_id(app, ID_TEST_NOTICE, "Uji notifikasi pesan", true, None::<&str>)?;
+
     let quit = MenuItem::with_id(app, ID_QUIT, "Keluar", true, None::<&str>)?;
 
     let separator = PredefinedMenuItem::separator(app)?;
@@ -192,7 +282,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     let autostart_check = autostart_item.clone();
 
     let mut tray = TrayIconBuilder::with_id("main")
-        .tooltip("Notchboo")
+        .tooltip("Mochi")
         .menu(&menu);
 
     if let Some(icon) = app.default_window_icon() {
@@ -204,9 +294,14 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         ID_ALWAYS => apply_mode(app, PeekMode::Always, &checks),
         ID_STANDBY => apply_mode(app, PeekMode::Standby, &checks),
         ID_AUTOSTART => {
-            // Item centang bisa berubah sendiri saat diklik; keadaan sebenarnya dibaca ulang dari sistem.
-            crate::autostart::set_enabled(app, !crate::autostart::is_enabled(app));
-            let _ = autostart_check.set_checked(crate::autostart::is_enabled(app));
+            crate::autostart::set_enabled(
+                app,
+                !crate::autostart::is_enabled(app),
+            );
+
+            let _ = autostart_check.set_checked(
+                crate::autostart::is_enabled(app),
+            );
         }
         ID_TEST_NOTICE => crate::notifications::emit_sample(app),
         ID_QUIT => app.exit(0),
