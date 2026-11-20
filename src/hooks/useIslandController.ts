@@ -1,12 +1,16 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useRef, useState } from "react";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { useSettings } from "./useSettings";
 
 import { ISLAND_PAGES, type IslandView } from "../components/island/IslandNav";
 import { PHASE_MS, type PomodoroPhase } from "../components/island/PomodoroView";
 import type { PlaybackState } from "../components/island/ProgressBar";
 import { useCountdown } from "./useCountdown";
-import { FLOW_RATIOS, TIMER_MODES, useFlowmodoro, usePersistedChoice, type FlowRatio, type TimerMode } from "./useFlowmodoro";
+import { useFlowmodoro, type FlowRatio, type TimerMode } from "./useFlowmodoro";
+
 import { useForegroundBusy } from "./useForegroundBusy";
 import { useIslandAlarms } from "./useIslandAlarms";
 import { useLyrics } from "./useLyrics";
@@ -53,8 +57,49 @@ export function useIslandController() {
   const [alerting, setAlerting] = useState(false);
 
   // Mode timer (Pomodoro / Flowmodoro) dan rasio istirahat Flow, diingat antar sesi.
-  const [mode, setModeState] = usePersistedChoice<TimerMode>(".timerMode", TIMER_MODES, "pomodoro");
-  const [flowRatio, setFlowRatio] = usePersistedChoice<FlowRatio>("mochi.flowRatio", FLOW_RATIOS, 5);
+  // Preferensi timer dikelola oleh centralized settings.
+  const { settings, loaded: settingsLoaded, updateSettings } = useSettings();
+
+  const pomodoroSettings = settings?.features.pomodoro;
+
+  const mode: TimerMode = pomodoroSettings?.mode ?? "pomodoro";
+  const flowRatio = (pomodoroSettings?.flowRatio ?? 4) as FlowRatio;
+
+  const setModeState = useCallback(
+    (next: TimerMode) => {
+      if (!settingsLoaded) return;
+
+      updateSettings((current) => ({
+        ...current,
+        features: {
+          ...current.features,
+          pomodoro: {
+            ...current.features.pomodoro,
+            mode: next,
+          },
+        },
+      }));
+    },
+    [settingsLoaded, updateSettings],
+  );
+
+  const setFlowRatio = useCallback(
+    (next: FlowRatio) => {
+      if (!settingsLoaded) return;
+
+      updateSettings((current) => ({
+        ...current,
+        features: {
+          ...current.features,
+          pomodoro: {
+            ...current.features.pomodoro,
+            flowRatio: next,
+          },
+        },
+      }));
+    },
+    [settingsLoaded, updateSettings],
+  );
 
   // Pesan masuk (WhatsApp, Instagram): island membesar sebentar dan menampilkannya.
   const { notice, dismiss: dismissNotice } = useMessageNotice();
