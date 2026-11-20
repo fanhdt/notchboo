@@ -4,6 +4,7 @@ use crate::{
     settings_store::SettingsStore,
 };
 use tauri::{AppHandle, Emitter, State};
+use crate::shortcuts;
 
 pub const SETTINGS_CHANGED_EVENT: &str = "settings-changed";
 
@@ -25,12 +26,35 @@ pub fn settings_save(
     store: State<'_, SettingsStore>,
     settings: AppSettings,
 ) -> Result<AppSettings, String> {
-    store.save(&settings)?;
+    // Ambil konfigurasi sebelumnya untuk kebutuhan rollback.
+    let previous = store.load_or_default()?;
 
+    // Terapkan shortcut baru terlebih dahulu.
+    shortcuts::replace_shortcuts(
+        &app,
+        &previous.shortcuts,
+        &settings.shortcuts,
+    )?;
+
+    // Simpan konfigurasi. Jika gagal, pulihkan shortcut sebelumnya.
+    if let Err(error) = store.save(&settings) {
+        if let Err(rollback_error) = shortcuts::replace_shortcuts(
+            &app,
+            &settings.shortcuts,
+            &previous.shortcuts,
+        ) {
+            return Err(format!(
+                "Gagal menyimpan konfigurasi: {error}. \
+                 Gagal memulihkan shortcut sebelumnya: {rollback_error}"
+            ));
+        }
+
+        return Err(error);
+    }
+
+    // Beri tahu frontend bahwa konfigurasi telah berubah.
     if let Err(error) = app.emit(SETTINGS_CHANGED_EVENT, settings.clone()) {
-        eprintln!(
-            "[Settings] Gagal mengirim event {SETTINGS_CHANGED_EVENT}: {error}"
-        );
+        eprintln!("[Settings] Gagal mengirim event perubahan: {error}");
     }
 
     Ok(settings)

@@ -9,6 +9,8 @@ mod notifications;
 mod settings;
 mod settings_commands;
 mod settings_store;
+mod shortcuts;
+mod settings_window;
 
 // Bagian yang memakai API sistem punya satu berkas per platform;
 // bentuk publiknya sama.
@@ -43,6 +45,7 @@ use tauri::{Manager, RunEvent};
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -50,6 +53,7 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        
         .manage(island::IslandShared::default())
         .manage(foreground::ForegroundShared::default())
         .manage(monitor::MonitorControl::default())
@@ -61,14 +65,21 @@ pub fn run() {
                 .map_err(std::io::Error::other)?
                 .join("settings.json");
 
-            let settings_store =
-                settings_store::SettingsStore::new(settings_path);
+           let settings_store = settings_store::SettingsStore::new(settings_path);
 
-            settings_store
-                .load_or_default()
-                .map_err(std::io::Error::other)?;
+let settings = settings_store
+    .load_or_default()
+    .map_err(std::io::Error::other)?;
 
-            app.manage(settings_store);
+app.manage(settings_store);
+
+if let Err(error) =
+    shortcuts::register_shortcuts(app.handle(), &settings.shortcuts)
+{
+    eprintln!(
+        "[Shortcuts] Gagal mendaftarkan shortcut saat startup: {error}"
+    );
+}
 
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -104,8 +115,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             // Centralized settings
+
             settings_commands::settings_load,
             settings_commands::settings_save,
+            settings_window::settings_open_window,
 
             // Existing commands
             foreground::get_foreground_busy,
