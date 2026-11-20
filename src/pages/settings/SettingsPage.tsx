@@ -1,12 +1,13 @@
 import { useState, type KeyboardEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { open, save } from "@tauri-apps/plugin-dialog";
 
 import { useSettings } from "../../hooks/useSettings";
-import type { AppSettings } from "../../lib/settings";
+import { confirmSettingsImport, exportSettings, previewSettingsImport, type AppSettings } from "../../lib/settings";
 import { useSoundSettings } from "../../hooks/useSoundSettings";
 import type { AlarmKind, AlarmSound } from "../../lib/sound";
 
-type Section = "general" | "appearance" | "features" | "shortcuts" | "privacy" | "about";
+type Section = "general" | "appearance" | "features" | "shortcuts" | "privacy" | "data" | "about";
 
 const SECTIONS: { id: Section; label: string; description: string }[] = [
   { id: "general", label: "Umum", description: "Perilaku dan startup aplikasi" },
@@ -14,6 +15,7 @@ const SECTIONS: { id: Section; label: string; description: string }[] = [
   { id: "features", label: "Fitur", description: "Preferensi dan fitur Mochi" },
   { id: "shortcuts", label: "Shortcut", description: "Pintasan keyboard" },
   { id: "privacy", label: "Privasi", description: "Kontrol data dan akses" },
+  { id: "data", label: "Data Management", description: "Ekspor dan impor konfigurasi" },
   { id: "about", label: "Tentang", description: "Informasi aplikasi" },
 ];
 
@@ -69,6 +71,90 @@ export default function SettingsPage() {
   const sound = useSoundSettings();
   const [capturingShortcut, setCapturingShortcut] = useState<keyof AppSettings["shortcuts"] | null>(null);
   const [shortcutError, setShortcutError] = useState<string | null>(null);
+
+  const [dataBusy, setDataBusy] = useState(false);
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [dataNotice, setDataNotice] = useState<string | null>(null);
+  const [importPath, setImportPath] = useState<string | null>(null);
+  const [importPreview, setImportPreview] = useState<AppSettings | null>(null);
+
+  async function handleExportSettings() {
+    setDataBusy(true);
+    setDataError(null);
+    setDataNotice(null);
+
+    try {
+      const filePath = await save({
+        title: "Export Mochi Settings",
+        defaultPath: "mochi-settings.json",
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+
+      if (!filePath) return;
+
+      await exportSettings(filePath);
+      setDataNotice("Konfigurasi berhasil diekspor.");
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : "Gagal mengekspor konfigurasi.");
+    } finally {
+      setDataBusy(false);
+    }
+  }
+
+  async function handlePreviewImport() {
+    setDataBusy(true);
+    setDataError(null);
+    setDataNotice(null);
+    setImportPreview(null);
+    setImportPath(null);
+
+    try {
+      const selected = await open({
+        title: "Import Mochi Settings",
+        multiple: false,
+        directory: false,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+
+      if (!selected || Array.isArray(selected)) return;
+
+      const preview = await previewSettingsImport(selected);
+
+      setImportPath(selected);
+      setImportPreview(preview);
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : "Gagal membaca konfigurasi.");
+    } finally {
+      setDataBusy(false);
+    }
+  }
+
+  async function handleConfirmImport() {
+    if (!importPath || !importPreview) return;
+
+    setDataBusy(true);
+    setDataError(null);
+    setDataNotice(null);
+
+    try {
+      await confirmSettingsImport(importPath);
+      await reloadSettings();
+
+      setImportPath(null);
+      setImportPreview(null);
+      setDataNotice("Konfigurasi berhasil diimpor dan diterapkan.");
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : "Gagal menerapkan konfigurasi.");
+    } finally {
+      setDataBusy(false);
+    }
+  }
+
+  function handleCancelImport() {
+    setImportPath(null);
+    setImportPreview(null);
+    setDataError(null);
+  }
 
   function updateGeneral<K extends keyof AppSettings["general"]>(key: K, value: AppSettings["general"][K]) {
     updateSettings((current) => ({
@@ -619,6 +705,116 @@ export default function SettingsPage() {
                   <p className="mt-1 text-xs leading-relaxed text-white/35">Daftar aplikasi yang dikecualikan dari pengumpulan data akan dikelola ketika integrasi Clipboard dan Notification Center tersedia.</p>
                   <p className="mt-3 text-xs text-white/30">{settings.privacy.excludedApps.length} aplikasi dikecualikan</p>
                 </div>
+              </section>
+            )}
+
+            {activeSection === "data" && (
+              <section>
+                <SectionHeading title="Data Management" description="Kelola konfigurasi Mochi melalui file JSON. Simpan konfigurasi sebagai backup atau pindahkan ke perangkat lain." />
+
+                {/* Export configuration */}
+                <div className="mb-6 rounded-xl border border-white/5 bg-white/[0.025] p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-sm font-medium text-white/85">Export configuration</h3>
+                      <p className="mt-1 max-w-md text-xs leading-relaxed text-white/40">Simpan seluruh konfigurasi Mochi saat ini ke file JSON.</p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleExportSettings()}
+                      disabled={dataBusy || saving}
+                      className="shrink-0 rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-black transition-opacity hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Export JSON
+                    </button>
+                  </div>
+                </div>
+
+                {/* Import configuration */}
+                <div className="rounded-xl border border-white/5 bg-white/[0.025] p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-sm font-medium text-white/85">Import configuration</h3>
+                      <p className="mt-1 max-w-md text-xs leading-relaxed text-white/40">Pulihkan konfigurasi dari file JSON. File akan divalidasi dan ditampilkan terlebih dahulu sebelum diterapkan.</p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => void handlePreviewImport()}
+                      disabled={dataBusy || saving}
+                      className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/75 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Select JSON
+                    </button>
+                  </div>
+
+                  {importPreview && (
+                    <div className="mt-5 rounded-lg border border-accent/20 bg-accent/[0.04] p-4">
+                      <div className="mb-4">
+                        <p className="text-xs font-semibold text-accent">Import preview</p>
+                        <p className="mt-1 text-[11px] text-white/40">File berhasil dibaca dan lolos validasi.</p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-lg bg-black/20 p-3">
+                          <p className="text-[10px] text-white/35">Configuration version</p>
+                          <p className="mt-1 text-sm font-medium text-white/80">{importPreview.version}</p>
+                        </div>
+
+                        <div className="rounded-lg bg-black/20 p-3">
+                          <p className="text-[10px] text-white/35">Theme</p>
+                          <p className="mt-1 text-sm font-medium capitalize text-white/80">{importPreview.appearance.theme}</p>
+                        </div>
+
+                        <div className="rounded-lg bg-black/20 p-3">
+                          <p className="text-[10px] text-white/35">Configured shortcuts</p>
+                          <p className="mt-1 text-sm font-medium text-white/80">{Object.values(importPreview.shortcuts).filter(Boolean).length}</p>
+                        </div>
+
+                        <div className="rounded-lg bg-black/20 p-3">
+                          <p className="text-[10px] text-white/35">Startup</p>
+                          <p className="mt-1 text-sm font-medium text-white/80">{importPreview.general.launchAtStartup ? "Enabled" : "Disabled"}</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 rounded-lg border border-hot/15 bg-hot/[0.04] p-3">
+                        <p className="text-xs font-medium text-hot">Perhatian</p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-white/45">Konfigurasi aktif akan digantikan. Mochi akan membuat backup otomatis sebelum perubahan diterapkan.</p>
+                      </div>
+
+                      <div className="mt-4 flex justify-end gap-2">
+                        <button type="button" onClick={handleCancelImport} disabled={dataBusy} className="rounded-lg px-4 py-2 text-xs text-white/50 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-40">
+                          Cancel
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => void handleConfirmImport()}
+                          disabled={dataBusy || saving}
+                          className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-black transition-opacity hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {dataBusy ? "Applying..." : "Apply configuration"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Operation status */}
+                {dataError && (
+                  <div role="alert" className="mt-4 rounded-lg border border-hot/20 bg-hot/5 p-3">
+                    <p className="text-xs leading-relaxed text-hot">{dataError}</p>
+                  </div>
+                )}
+
+                {dataNotice && (
+                  <div role="status" className="mt-4 rounded-lg border border-accent/20 bg-accent/5 p-3">
+                    <p className="text-xs leading-relaxed text-accent">{dataNotice}</p>
+                  </div>
+                )}
+
+                {dataBusy && <p className="mt-4 text-[11px] text-white/35">Sedang memproses konfigurasi...</p>}
               </section>
             )}
 

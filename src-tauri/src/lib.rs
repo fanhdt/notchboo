@@ -116,9 +116,13 @@ if let Err(error) =
         .invoke_handler(tauri::generate_handler![
             // Centralized settings
 
-            settings_commands::settings_load,
-            settings_commands::settings_save,
-            settings_window::settings_open_window,
+         // Centralized settings
+        settings_commands::settings_load,
+        settings_commands::settings_save,
+        settings_commands::settings_export,
+        settings_commands::settings_preview_import,
+        settings_commands::settings_confirm_import,
+        settings_window::settings_open_window,
 
             // Existing commands
             foreground::get_foreground_busy,

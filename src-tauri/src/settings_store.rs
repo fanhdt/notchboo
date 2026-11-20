@@ -1,8 +1,7 @@
-
 use std::{
     fs,
     io::Write,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Mutex, MutexGuard,
         atomic::{AtomicU64, Ordering},
@@ -76,6 +75,95 @@ impl SettingsStore {
     pub fn save(&self, settings: &AppSettings) -> Result<(), String> {
         let _guard = Self::lock();
         self.save_unlocked(settings)
+    }
+
+        /// Mengekspor konfigurasi aktif ke file JSON tujuan.
+    pub fn export_to(&self, destination: impl AsRef<Path>) -> Result<(), String> {
+        let _guard = Self::lock();
+
+        let settings = self.load_or_default_unlocked()?;
+
+        let serialized = serde_json::to_vec_pretty(&settings)
+            .map_err(|error| format!("Tidak bisa membuat JSON konfigurasi: {error}"))?;
+
+        write_atomically_to(destination.as_ref(), &serialized)
+    }
+
+    /// Membaca dan memvalidasi file konfigurasi eksternal tanpa mengubah
+    /// konfigurasi aktif.
+    pub fn read_import_file(
+        path: impl AsRef<Path>,
+    ) -> Result<AppSettings, String> {
+        let path = path.as_ref();
+
+        let raw = fs::read_to_string(path).map_err(|error| {
+            format!(
+                "Tidak bisa membaca file konfigurasi {}: {error}",
+                path.display()
+            )
+        })?;
+
+        let settings = serde_json::from_str::<AppSettings>(&raw)
+            .map_err(|error| format!("Format JSON konfigurasi tidak valid: {error}"))?;
+
+        settings
+            .validate()
+            .map_err(|error| format!("Konfigurasi import tidak valid: {error}"))?;
+
+        Ok(settings)
+    }
+
+    /// Membuat salinan konfigurasi aktif sebelum proses import atau restore.
+    /// File konfigurasi asli tetap dipertahankan.
+    pub fn backup_current(&self) -> Result<PathBuf, String> {
+        let _guard = Self::lock();
+
+        // Pastikan konfigurasi aktif tersedia dan valid.
+        self.load_or_default_unlocked()?;
+
+        let parent = self.path.parent().ok_or_else(|| {
+            "Folder konfigurasi tidak ditemukan".to_string()
+        })?;
+
+        let stem = self
+            .path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("settings");
+
+        let extension = self
+            .path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("json");
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+
+        for _ in 0..100 {
+            let counter = FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
+
+            let backup = parent.join(format!(
+                "{stem}.backup-{timestamp}-{counter}.{extension}"
+            ));
+
+            match fs::copy(&self.path, &backup) {
+                Ok(_) => return Ok(backup),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    continue;
+                }
+                Err(error) => {
+                    return Err(format!(
+                        "Tidak bisa membuat backup konfigurasi {}: {error}",
+                        self.path.display()
+                    ));
+                }
+            }
+        }
+
+        Err("Tidak bisa membuat nama backup konfigurasi yang unik".to_string())
     }
 
     fn save_unlocked(&self, settings: &AppSettings) -> Result<(), String> {
@@ -214,6 +302,71 @@ impl SettingsStore {
 
         Err("Tidak bisa membuat temporary file konfigurasi yang unik".to_string())
     }
+}
+
+fn write_atomically_to(
+    destination: &Path,
+    contents: &[u8],
+) -> Result<(), String> {
+    let parent = destination.parent().ok_or_else(|| {
+        "Lokasi folder tujuan tidak valid".to_string()
+    })?;
+
+    fs::create_dir_all(parent).map_err(|error| {
+        format!(
+            "Tidak bisa membuat folder tujuan {}: {error}",
+            parent.display()
+        )
+    })?;
+
+    for _ in 0..100 {
+        let counter = FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
+
+        let temp_path = parent.join(format!(".settings-export-{counter}.tmp"));
+
+        let mut file = match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp_path)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                continue;
+            }
+            Err(error) => {
+                return Err(format!(
+                    "Tidak bisa membuat temporary file export: {error}"
+                ));
+            }
+        };
+
+        let write_result = file
+            .write_all(contents)
+            .and_then(|()| file.sync_all());
+
+        if let Err(error) = write_result {
+            let _ = fs::remove_file(&temp_path);
+
+            return Err(format!(
+                "Tidak bisa menulis file export: {error}"
+            ));
+        }
+
+        drop(file);
+
+        if let Err(error) = replace_file(&temp_path, destination) {
+            let _ = fs::remove_file(&temp_path);
+
+            return Err(format!(
+                "Tidak bisa menyimpan file export {}: {error}",
+                destination.display()
+            ));
+        }
+
+        return Ok(());
+    }
+
+    Err("Tidak bisa membuat temporary file export yang unik".to_string())
 }
 
 /// Mengganti file tujuan secara atomik sesuai platform.

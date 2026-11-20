@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "general": {
+    "launchAtStartup": true,
+    "startMinimized": false,
+    "keepRunningInBackground": true,
+    "closeToTray": true
+  },
+  "appearance": {
+    "theme": "system",
+    "island": {
+      "layout": "inline",
+      "peekBehavior": "whenBusy"
+    },
+    "animationsEnabled": true,
+    "transparency": 100
+  },
+  "shortcuts": {
+    "toggleIsland": "CmdOrCtrl+Shift+I",
+    "openLauncher": null,
+    "openClipboard": null,
+    "openNotifications": "CmdOrCtrl+PageUp",
+    "startFocus": null,
+    "openSettings": "CmdOrCtrl+Insert"
+  },
+  "privacy": {
+    "clipboardCaptureEnabled": false,
+    "notificationAccessEnabled": false,
+    "excludedApps": [],
+    "retentionDays": 30
+  },
+  "features": {
+    "media": true,
+    "systemMonitor": true,
+    "pomodoro": {
+      "enabled": true,
+      "mode": "flow",
+      "flowRatio": 5
+    },
+    "waterReminder": {
+      "enabled": true,
+      "mode": "smart",
+      "intervalMin": 120,
+      "goalMl": 2000,
+      "glassMl": 150,
+      "startHour": 8,
+      "endHour": 21
+    },
+    "tasks": true,
+    "quickShelf": true,
+    "sound": {
+      "volume": 1.0,
+      "pomodoro": "beep",
+      "water": "chime",
+      "task": "digital",
+      "message": "beep",
+      "repeat": true
+    },
+    "clipboard": {
+      "enabled": false,
+      "maxItems": 100
+    },
+    "launcher": {
+      "enabled": false,
+      "showRecentCommands": true,
+      "maxRecentCommands": 10
+    },
+    "notifications": {
+      "enabled": false,
+      "doNotDisturb": false,
+      "groupByApplication": true
+    },
+    "focus": {
+      "enabled": false,
+      "defaultDurationMin": 25,
+      "enableDoNotDisturb": false
+    }
+  }
+}

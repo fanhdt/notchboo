@@ -186,6 +186,27 @@ export function saveSettings(settings: AppSettings): Promise<AppSettings> {
 }
 
 /**
+ * Mengekspor konfigurasi aktif ke file JSON.
+ */
+export function exportSettings(filePath: string): Promise<void> {
+  return call<void>("settings_export", { filePath });
+}
+
+/**
+ * Membaca dan memvalidasi konfigurasi untuk preview import.
+ */
+export function previewSettingsImport(filePath: string): Promise<AppSettings> {
+  return call<AppSettings>("settings_preview_import", { filePath });
+}
+
+/**
+ * Mengonfirmasi import konfigurasi setelah preview.
+ */
+export function confirmSettingsImport(filePath: string): Promise<AppSettings> {
+  return call<AppSettings>("settings_confirm_import", { filePath });
+}
+
+/**
  * Mendengarkan perubahan konfigurasi dari window lain.
  * Caller bertanggung jawab memanggil UnlistenFn saat cleanup.
  */
