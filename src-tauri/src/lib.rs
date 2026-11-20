@@ -6,6 +6,8 @@ mod island;
 mod lyrics;
 mod monitor;
 mod notifications;
+mod settings;
+mod settings_store;
 
 // Bagian yang memakai API sistem punya satu berkas per platform; bentuk publiknya sama.
 #[cfg(windows)]
