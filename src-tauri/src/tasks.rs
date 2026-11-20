@@ -19,10 +19,15 @@ use std::{
     fs,
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex,
+    },
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde::Serialize;
+use serde_json::Value;
 use tauri::window::Color;
 use tauri::{
     AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Window,
@@ -43,10 +48,10 @@ const MIN_SIZE: (f64, f64) = (420.0, 520.0);
 const BACKGROUND: Color = Color(17, 17, 19, 255);
 
 /// Menyerialisasi seluruh operasi baca dan tulis tasks.json.
-///
-/// Penting: tasks_load juga menggunakan lock yang sama dengan tasks_save.
-/// Dengan begitu, pembacaan tidak berlangsung di tengah proses penulisan.
 static TASKS_WRITE_LOCK: Mutex<()> = Mutex::new(());
+
+/// Mencegah nama backup bertabrakan ketika beberapa operasi terjadi berdekatan.
+static BACKUP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -92,16 +97,122 @@ fn revision_for(data: &str) -> String {
     format!("{:016x}", hasher.finish())
 }
 
+/// Memvalidasi struktur minimum yang dibutuhkan frontend.
+///
+/// Jangan menerima dokumen yang membuat parser frontend membuang seluruh
+/// entri atau kategori secara diam-diam.
+fn validate_tasks_document(data: &str) -> Result<(), String> {
+    let value: Value =
+        serde_json::from_str(data).map_err(|error| format!("JSON tidak valid: {error}"))?;
+
+    let root = value
+        .as_object()
+        .ok_or_else(|| "struktur utama harus berupa object".to_string())?;
+
+    let tasks = root
+        .get("tasks")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "field tasks tidak ditemukan atau bukan array".to_string())?;
+
+    for (index, task) in tasks.iter().enumerate() {
+        let object = task
+            .as_object()
+            .ok_or_else(|| format!("tasks[{index}] bukan object"))?;
+
+        for field in ["id", "title", "date"] {
+            if !object.get(field).is_some_and(Value::is_string) {
+                return Err(format!("tasks[{index}].{field} tidak valid"));
+            }
+        }
+    }
+
+    if let Some(categories) = root.get("categories") {
+        let categories = categories
+            .as_array()
+            .ok_or_else(|| "field categories bukan array".to_string())?;
+
+        for (index, category) in categories.iter().enumerate() {
+            let object = category
+                .as_object()
+                .ok_or_else(|| format!("categories[{index}] bukan object"))?;
+
+            for field in ["id", "name", "color"] {
+                if !object.get(field).is_some_and(Value::is_string) {
+                    return Err(format!("categories[{index}].{field} tidak valid"));
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Memindahkan file rusak ke backup tanpa menimpa backup yang sudah ada.
+fn backup_corrupt_tasks(path: &Path) -> Result<PathBuf, String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "folder penyimpanan tugas tidak ditemukan".to_string())?;
+
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("tasks");
+
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("json");
+
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+
+    for _ in 0..100 {
+        let counter = BACKUP_COUNTER.fetch_add(1, Ordering::Relaxed);
+
+        let backup = parent.join(format!(
+            "{stem}.corrupt-{timestamp}-{counter}.{extension}"
+        ));
+
+        match fs::rename(path, &backup) {
+            Ok(()) => return Ok(backup),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(format!(
+                    "tidak bisa mengamankan file tugas rusak {}: {error}",
+                    path.display()
+                ));
+            }
+        }
+    }
+
+    Err("tidak bisa membuat nama backup unik untuk file tugas rusak".to_string())
+}
+
 /// Membaca isi file.
 ///
 /// File yang belum pernah dibuat dianggap sebagai penyimpanan kosong.
+/// File rusak diamankan sebagai backup sebelum aplikasi menggunakan store kosong.
 fn read_tasks(path: &Path) -> Result<String, String> {
     match fs::read_to_string(path) {
-        Ok(text) => Ok(text),
+        Ok(text) => {
+            if let Err(reason) = validate_tasks_document(&text) {
+                let backup = backup_corrupt_tasks(path)?;
 
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            Ok(String::new())
+                eprintln!(
+                    "[Tasks] File penyimpanan tidak valid ({reason}). \
+                     File asli diamankan di {}",
+                    backup.display()
+                );
+
+                return Ok(String::new());
+            }
+
+            Ok(text)
         }
+
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
 
         Err(error) => Err(format!(
             "tidak bisa membaca {}: {error}",
@@ -147,9 +258,6 @@ pub fn tasks_load(app: AppHandle) -> Result<TasksLoadResult, String> {
 }
 
 /// Menyimpan data tugas jika revision masih sesuai.
-///
-/// Jika revision berbeda, data tidak ditulis. Frontend menerima data terbaru
-/// agar dapat melakukan rekonsiliasi sebelum mencoba menyimpan kembali.
 #[tauri::command(async)]
 pub fn tasks_save(
     app: AppHandle,
@@ -160,6 +268,10 @@ pub fn tasks_save(
     let write_guard = TASKS_WRITE_LOCK
         .lock()
         .map_err(|_| "kunci penyimpanan tugas rusak".to_string())?;
+
+    // Jangan menulis dokumen yang tidak valid ke penyimpanan.
+    validate_tasks_document(&data)
+        .map_err(|error| format!("data tugas tidak valid: {error}"))?;
 
     let path = data_path(&app)?;
 
@@ -176,9 +288,8 @@ pub fn tasks_save(
     }
 
     if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).map_err(|error| {
-            format!("tidak bisa membuat {}: {error}", dir.display())
-        })?;
+        fs::create_dir_all(dir)
+            .map_err(|error| format!("tidak bisa membuat {}: {error}", dir.display()))?;
     }
 
     write_tasks_atomically(&path, &data)?;
@@ -268,7 +379,73 @@ fn reveal(window: &WebviewWindow) -> tauri::Result<()> {
 /// membuat window dari command sinkron bisa deadlock di Windows.
 #[tauri::command(async)]
 pub fn tasks_open_window(app: AppHandle) -> Result<(), String> {
-    open(&app).map_err(|error| {
-        format!("Tidak bisa membuka Tugas: {error}")
-    })
+    open(&app).map_err(|error| format!("Tidak bisa membuka Tugas: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_valid_tasks_document() {
+        let data = r#"{
+            "version": 1,
+            "tasks": [],
+            "categories": []
+        }"#;
+
+        assert!(validate_tasks_document(data).is_ok());
+    }
+
+    #[test]
+    fn rejects_invalid_json() {
+        assert!(validate_tasks_document("{invalid json").is_err());
+    }
+
+    #[test]
+    fn rejects_missing_tasks_array() {
+        assert!(validate_tasks_document(r#"{"categories":[]}"#).is_err());
+    }
+
+    #[test]
+    fn rejects_task_without_required_fields() {
+        let data = r#"{
+            "tasks": [{"id": "task-1", "title": "Test"}],
+            "categories": []
+        }"#;
+
+        assert!(validate_tasks_document(data).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_category() {
+        let data = r#"{
+            "tasks": [],
+            "categories": [{"id": "cat-1", "name": "Work"}]
+        }"#;
+
+        assert!(validate_tasks_document(data).is_err());
+    }
+
+    #[test]
+    fn backup_preserves_original_file() {
+        let counter = BACKUP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "mochi-tasks-backup-test-{}-{counter}",
+            std::process::id()
+        ));
+
+        fs::create_dir_all(&dir).unwrap();
+
+        let path = dir.join("tasks.json");
+        let original = "{invalid json";
+        fs::write(&path, original).unwrap();
+
+        let backup = backup_corrupt_tasks(&path).unwrap();
+
+        assert!(!path.exists());
+        assert_eq!(fs::read_to_string(&backup).unwrap(), original);
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
 }
