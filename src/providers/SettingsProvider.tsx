@@ -252,8 +252,6 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
 
           lastSaved.current = remote;
           apply(remote);
-
-          apply(remote);
         });
       } catch (reason) {
         console.error("[Settings] Failed to register event listener:", reason);
