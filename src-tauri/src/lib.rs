@@ -1,5 +1,6 @@
 mod activity;
 mod autostart;
+mod clipboard;
 mod cursor_geometry;
 mod island;
 mod lyrics;
@@ -56,7 +57,10 @@ pub fn run() {
         .manage(foreground::ForegroundShared::default())
         .manage(monitor::MonitorControl::default())
         .setup(|app| {
-            // Inisialisasi centralized settings.
+            // ============================================================
+            // Centralized settings
+            // ============================================================
+
             let settings_path = app
                 .path()
                 .app_config_dir()
@@ -90,9 +94,7 @@ pub fn run() {
                         .save(&settings)
                         .map_err(std::io::Error::other)?;
                 } else {
-                    // Tidak ada marker lama:
-                    // gunakan preferensi centralized settings yang tersedia.
-                    // Untuk instalasi baru, nilai ini berasal dari default settings.
+                    // Instalasi baru: sinkronkan preferensi centralized settings.
                     let desired = settings.general.launch_at_startup;
                     let current =
                         autostart::is_enabled(app.handle()).map_err(std::io::Error::other)?;
@@ -102,7 +104,6 @@ pub fn run() {
                             .map_err(std::io::Error::other)?;
                     }
 
-                    // Jika settings sudah ada, pastikan nilainya tetap tersimpan.
                     if !settings_file_exists {
                         settings_store
                             .save(&settings)
@@ -124,12 +125,44 @@ pub fn run() {
 
             app.manage(settings_store);
 
+            // ============================================================
+            // Clipboard Manager
+            // ============================================================
+
+            let clipboard_path = app
+                .path()
+                .app_data_dir()?
+                .join("clipboard")
+                .join("history.sqlite3");
+
+            let clipboard_state =
+                clipboard::ClipboardState::open(clipboard_path).map_err(std::io::Error::other)?;
+
+            app.manage(clipboard_state);
+
+            #[cfg(windows)]
+            if let Err(error) = clipboard::start_monitor(app.handle()) {
+                eprintln!("[Mochi] Gagal menjalankan clipboard listener: {error}");
+            }
+
+            // ============================================================
+            // Global shortcuts
+            // ============================================================
+
             if let Err(error) = shortcuts::register_shortcuts(app.handle(), &settings.shortcuts) {
                 eprintln!("[Shortcuts] Gagal mendaftarkan shortcut saat startup: {error}");
             }
 
+            // ============================================================
+            // Platform setup
+            // ============================================================
+
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+            // ============================================================
+            // Main window
+            // ============================================================
 
             if let Some(main_window) = app.get_webview_window("main") {
                 window::position_top_center(&main_window)?;
@@ -143,6 +176,10 @@ pub fn run() {
                 island::start_cursor_watcher(app.handle(), main_window);
             }
 
+            // ============================================================
+            // Background watchers
+            // ============================================================
+
             foreground::start_foreground_watcher(app.handle());
 
             if let Err(error) = tray::init(app.handle()) {
@@ -153,14 +190,16 @@ pub fn run() {
             monitor::start_monitor(app.handle());
             notifications::start_notification_watcher(app.handle());
 
+            // ============================================================
+            // Quick Shelf
+            // ============================================================
+
             app.manage(shelf::init(app.handle()));
             shelf::start_maintenance(app.handle());
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            // Centralized settings
-
             // Centralized settings
             settings_commands::settings_load,
             settings_commands::settings_save,
@@ -177,6 +216,7 @@ pub fn run() {
             media::media_control,
             media::media_seek,
             monitor::set_monitoring,
+            // Quick Shelf
             shelf::commands::shelf_list,
             shelf::commands::shelf_get,
             shelf::commands::shelf_add_text,
@@ -191,9 +231,19 @@ pub fn run() {
             shelf::commands::shelf_get_settings,
             shelf::commands::shelf_set_default_expiry,
             shelf::window::shelf_open_window,
+            // Tasks
             tasks::tasks_load,
             tasks::tasks_save,
-            tasks::tasks_open_window
+            tasks::tasks_open_window,
+            // Clipboard Manager
+            clipboard::commands::clipboard_list,
+            clipboard::commands::clipboard_get,
+            clipboard::commands::clipboard_set_pinned,
+            clipboard::commands::clipboard_delete,
+            clipboard::commands::clipboard_clear,
+            clipboard::commands::clipboard_get_count,
+            clipboard::commands::clipboard_set_capture_paused,
+            clipboard::commands::clipboard_get_capture_paused,
         ]);
 
     let app = builder
@@ -207,6 +257,7 @@ pub fn run() {
             {
                 foreground::stop_foreground_watcher();
                 media::stop_media_watcher();
+                clipboard::stop_monitor(app_handle);
             }
 
             island::stop_cursor_watcher();
