@@ -10,6 +10,7 @@ use serde::Serialize;
 use sysinfo::{Disks, Networks, System};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+
 use crate::power::{self, BatteryInfo};
 
 const STATS_EVENT: &str = "system-stats";

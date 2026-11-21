@@ -7,7 +7,7 @@ mod windows_listener {
         thread,
     };
 
-    use tauri::{AppHandle, Manager};
+   use tauri::{AppHandle, Emitter, Manager};
 
     use windows_sys::Win32::{
         Foundation::{
@@ -267,14 +267,21 @@ mod windows_listener {
             eprintln!("[Clipboard] Gagal membersihkan history kedaluwarsa: {error}");
         }
 
-        if let Err(error) = state.add(
-            &content,
-            source_app.as_deref(),
-            settings.features.clipboard.max_items,
-        ) {
-            // Jangan pernah mencetak isi clipboard ke log.
-            eprintln!("[Clipboard] Gagal menyimpan item: {error}");
+        match state.add(
+    &content,
+    source_app.as_deref(),
+    settings.features.clipboard.max_items,
+) {
+    Ok(_) => {
+        if let Err(error) = app.emit("clipboard-updated", ()) {
+            eprintln!("[Clipboard] Gagal mengirim event pembaruan: {error}");
         }
+    }
+    Err(error) => {
+        // Jangan pernah mencetak isi clipboard ke log.
+        eprintln!("[Clipboard] Gagal menyimpan item: {error}");
+    }
+}
     }
 
     fn is_excluded(source_app: Option<&str>, excluded_apps: &[String]) -> bool {

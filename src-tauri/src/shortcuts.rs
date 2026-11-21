@@ -106,6 +106,7 @@ fn register_parsed(app: &AppHandle, shortcuts: &[(&'static str, Shortcut)]) -> R
 }
 
 /// Menangani aksi dari shortcut yang ditekan.
+
 fn handle_shortcut_action(app: &AppHandle, action: &str) {
     match action {
         "toggleIsland" => {
@@ -122,6 +123,11 @@ fn handle_shortcut_action(app: &AppHandle, action: &str) {
         "openSettings" => {
             if let Err(error) = crate::settings_window::open(app) {
                 eprintln!("[Shortcuts] Gagal membuka Settings: {error}");
+            }
+        }
+        "openClipboard" => {
+            if let Err(error) = crate::clipboard_window::open(app) {
+                eprintln!("[Shortcuts] Gagal membuka Clipboard Manager: {error}");
             }
         }
         _ => {

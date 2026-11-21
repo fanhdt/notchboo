@@ -77,6 +77,7 @@ export default function SettingsPage() {
   const [dataNotice, setDataNotice] = useState<string | null>(null);
   const [importPath, setImportPath] = useState<string | null>(null);
   const [importPreview, setImportPreview] = useState<AppSettings | null>(null);
+  const [excludedAppInput, setExcludedAppInput] = useState("");
 
   async function handleExportSettings() {
     setDataBusy(true);
@@ -192,6 +193,30 @@ export default function SettingsPage() {
       ...current,
       privacy: { ...current.privacy, [key]: value },
     }));
+  }
+
+  function handleAddExcludedApp() {
+    const appName = excludedAppInput.trim();
+
+    if (!appName) return;
+
+    const alreadyExists = settings?.privacy.excludedApps.some((app) => app.toLowerCase() === appName.toLowerCase());
+
+    if (alreadyExists) {
+      setExcludedAppInput("");
+      return;
+    }
+
+    updatePrivacy("excludedApps", [...(settings?.privacy.excludedApps ?? []), appName]);
+
+    setExcludedAppInput("");
+  }
+
+  function handleRemoveExcludedApp(appName: string) {
+    updatePrivacy(
+      "excludedApps",
+      settings!.privacy.excludedApps.filter((app) => app.toLowerCase() !== appName.toLowerCase()),
+    );
   }
 
   function updateShortcut<K extends keyof AppSettings["shortcuts"]>(key: K, value: AppSettings["shortcuts"][K]) {
@@ -622,8 +647,46 @@ export default function SettingsPage() {
                 </SettingRow>
 
                 <div className="mb-3 mt-7 border-b border-white/10 pb-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-white/55">Roadmap</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-white/55">Clipboard Manager</h3>
                 </div>
+
+                <SettingRow title="Aktifkan Clipboard Manager" description="Aktifkan fitur pengelolaan riwayat teks clipboard.">
+                  <Toggle
+                    label="Clipboard Manager"
+                    checked={settings.features.clipboard.enabled}
+                    onChange={(value) =>
+                      updateFeature("clipboard", {
+                        ...settings.features.clipboard,
+                        enabled: value,
+                      })
+                    }
+                  />
+                </SettingRow>
+
+                <SettingRow title="Maksimal riwayat" description="Jumlah item clipboard yang disimpan. Item yang disematkan tidak ikut dihapus oleh batas ini.">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      max="500"
+                      className={`${controlClass} w-24`}
+                      value={settings.features.clipboard.maxItems}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+
+                        if (!Number.isFinite(value)) return;
+
+                        updateFeature("clipboard", {
+                          ...settings.features.clipboard,
+                          maxItems: Math.min(500, Math.max(1, Math.floor(value))),
+                        });
+                      }}
+                    />
+                    <span className="text-xs text-white/35">items</span>
+                  </div>
+                </SettingRow>
+
+                <p className="mt-3 rounded-lg border border-white/5 bg-white/[0.025] p-3 text-xs leading-relaxed text-white/40">Clipboard Manager hanya menyimpan teks. Data disimpan secara lokal di perangkat dan tidak dikirim ke server.</p>
 
                 <p className="py-3 text-xs leading-relaxed text-white/35">Clipboard, Launcher, Notifications, dan Focus merupakan konfigurasi fitur roadmap. Pengaturan tersedia setelah implementasi fiturnya dimulai.</p>
               </section>
@@ -682,7 +745,7 @@ export default function SettingsPage() {
               <section>
                 <SectionHeading title="Privasi dan data" description="Kendalikan akses dan penyimpanan data lokal." />
 
-                <SettingRow title="Clipboard capture" description="Izinkan Mochi menyimpan riwayat teks clipboard.">
+                <SettingRow title="Clipboard capture" description="Izinkan Mochi menangkap dan menyimpan riwayat teks clipboard.">
                   <Toggle label="Clipboard capture" checked={settings.privacy.clipboardCaptureEnabled} onChange={(value) => updatePrivacy("clipboardCaptureEnabled", value)} />
                 </SettingRow>
 
@@ -690,7 +753,7 @@ export default function SettingsPage() {
                   <Toggle label="Notification access" checked={settings.privacy.notificationAccessEnabled} onChange={(value) => updatePrivacy("notificationAccessEnabled", value)} />
                 </SettingRow>
 
-                <SettingRow title="Retensi data" description="Masa penyimpanan data dalam hari.">
+                <SettingRow title="Retensi data" description="Masa penyimpanan riwayat clipboard dalam hari.">
                   <select className={controlClass} value={settings.privacy.retentionDays ?? "unlimited"} onChange={(event) => updatePrivacy("retentionDays", event.target.value === "unlimited" ? null : Number(event.target.value))}>
                     <option value="7">7 hari</option>
                     <option value="14">14 hari</option>
@@ -700,10 +763,59 @@ export default function SettingsPage() {
                   </select>
                 </SettingRow>
 
-                <div className="mt-5 rounded-xl border border-white/5 bg-white/[0.025] p-4">
-                  <p className="text-xs font-medium text-white/70">Pengecualian aplikasi</p>
-                  <p className="mt-1 text-xs leading-relaxed text-white/35">Daftar aplikasi yang dikecualikan dari pengumpulan data akan dikelola ketika integrasi Clipboard dan Notification Center tersedia.</p>
-                  <p className="mt-3 text-xs text-white/30">{settings.privacy.excludedApps.length} aplikasi dikecualikan</p>
+                <div className="mt-6 rounded-xl border border-white/5 bg-white/[0.025] p-4">
+                  <div>
+                    <p className="text-xs font-medium text-white/80">Pengecualian aplikasi</p>
+                    <p className="mt-1 text-xs leading-relaxed text-white/40">Clipboard tidak akan direkam ketika aplikasi yang sedang aktif termasuk dalam daftar ini. Masukkan nama executable, misalnya password-manager.exe.</p>
+                  </div>
+
+                  <form
+                    className="mt-4 flex gap-2"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      handleAddExcludedApp();
+                    }}
+                  >
+                    <input
+                      type="text"
+                      value={excludedAppInput}
+                      onChange={(event) => setExcludedAppInput(event.target.value)}
+                      placeholder="Contoh: password-manager.exe"
+                      className={`${controlClass} min-w-0 flex-1`}
+                      aria-label="Nama aplikasi yang dikecualikan"
+                    />
+
+                    <button
+                      type="submit"
+                      disabled={!excludedAppInput.trim()}
+                      className="shrink-0 rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-black transition-opacity hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Tambah
+                    </button>
+                  </form>
+
+                  <div className="mt-4 space-y-2">
+                    {settings.privacy.excludedApps.length === 0 ? (
+                      <p className="py-3 text-center text-xs text-white/30">Belum ada aplikasi yang dikecualikan.</p>
+                    ) : (
+                      settings.privacy.excludedApps.map((appName) => (
+                        <div key={appName} className="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-black/10 px-3 py-2">
+                          <span className="min-w-0 truncate text-xs text-white/70">{appName}</span>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveExcludedApp(appName)}
+                            aria-label={`Hapus pengecualian ${appName}`}
+                            className="shrink-0 rounded-md px-2 py-1 text-xs text-white/35 transition-colors hover:bg-hot/10 hover:text-hot"
+                          >
+                            Hapus
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <p className="mt-3 text-[10px] text-white/30">{settings.privacy.excludedApps.length} aplikasi dikecualikan</p>
                 </div>
               </section>
             )}

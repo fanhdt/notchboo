@@ -1,6 +1,7 @@
 mod activity;
 mod autostart;
 mod clipboard;
+mod clipboard_window;
 mod cursor_geometry;
 mod island;
 mod lyrics;
@@ -244,6 +245,7 @@ pub fn run() {
             clipboard::commands::clipboard_get_count,
             clipboard::commands::clipboard_set_capture_paused,
             clipboard::commands::clipboard_get_capture_paused,
+            clipboard_window::clipboard_open_window,
         ]);
 
     let app = builder
