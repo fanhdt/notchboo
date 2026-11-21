@@ -42,15 +42,17 @@ pub fn get_foreground_busy(shared: State<'_, ForegroundShared>) -> bool {
 pub fn start_foreground_watcher(app: &AppHandle) {
     let app = app.clone();
 
-    thread::spawn(move || loop {
-        thread::sleep(POLL_INTERVAL);
+    thread::spawn(move || {
+        loop {
+            thread::sleep(POLL_INTERVAL);
 
-        let busy = is_other_app_active();
-        let shared = app.state::<ForegroundShared>();
+            let busy = is_other_app_active();
+            let shared = app.state::<ForegroundShared>();
 
-        if shared.busy.swap(busy, Ordering::Relaxed) != busy {
-            // Gagal mengirim event bukan masalah fatal; status terbaru tetap tersimpan.
-            let _ = app.emit(BUSY_EVENT, busy);
+            if shared.busy.swap(busy, Ordering::Relaxed) != busy {
+                // Gagal mengirim event bukan masalah fatal; status terbaru tetap tersimpan.
+                let _ = app.emit(BUSY_EVENT, busy);
+            }
         }
     });
 }

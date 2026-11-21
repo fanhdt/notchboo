@@ -1,4 +1,3 @@
-
 use std::{
     sync::{
         Arc, Mutex, OnceLock,
@@ -123,15 +122,8 @@ pub fn start_cursor_watcher(app: &AppHandle, window: WebviewWindow) {
     let handle = match thread::Builder::new()
         .name("island-cursor-watcher".into())
         .spawn(move || {
-            run_cursor_watcher(
-                app,
-                window,
-                label,
-                geometry_dirty,
-                stop_receiver,
-            );
-        })
-    {
+            run_cursor_watcher(app, window, label, geometry_dirty, stop_receiver);
+        }) {
         Ok(handle) => handle,
         Err(error) => {
             eprintln!("gagal memulai cursor watcher: {error}");

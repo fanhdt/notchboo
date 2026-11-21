@@ -12,7 +12,7 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::{thread, time::Duration};
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
@@ -129,7 +129,9 @@ where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
-    tauri::async_runtime::spawn_blocking(work).await.map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 // ---------- Pemantau ----------
@@ -204,11 +206,19 @@ fn playback_of(snapshot: &Snapshot) -> PlaybackInfo {
 
 /// Menjalankan AppleScript. `None` jika gagal (mis. izin otomasi ditolak atau pemutar tidak punya lagu).
 fn osascript(script: &str) -> Option<String> {
-    let output = Command::new("osascript").arg("-e").arg(script).output().ok()?;
+    let output = Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .output()
+        .ok()?;
     if !output.status.success() {
         return None;
     }
-    Some(String::from_utf8_lossy(&output.stdout).trim_end_matches(['\n', '\r']).to_string())
+    Some(
+        String::from_utf8_lossy(&output.stdout)
+            .trim_end_matches(['\n', '\r'])
+            .to_string(),
+    )
 }
 
 /// Memeriksa lewat nama proses. Skrip AppleScript yang menyebut aplikasi bisa meluncurkannya
@@ -291,7 +301,9 @@ fn read_snapshot() -> Option<Snapshot> {
     }
 
     let previous = ACTIVE.lock().ok().and_then(|active| *active);
-    let index = previous.and_then(|player| found.iter().position(|snapshot| snapshot.player == player)).unwrap_or(0);
+    let index = previous
+        .and_then(|player| found.iter().position(|snapshot| snapshot.player == player))
+        .unwrap_or(0);
     (index < found.len()).then(|| found.swap_remove(index))
 }
 
@@ -374,11 +386,17 @@ fn export_music_artwork() -> Option<String> {
 /// Pemutar sasaran perintah: yang terakhir aktif jika masih berjalan, kalau tidak yang pertama berjalan.
 fn control_target() -> Option<Player> {
     let previous = ACTIVE.lock().ok().and_then(|active| *active);
-    previous.filter(|player| is_running(*player)).or_else(|| Player::ALL.into_iter().find(|player| is_running(*player)))
+    previous
+        .filter(|player| is_running(*player))
+        .or_else(|| Player::ALL.into_iter().find(|player| is_running(*player)))
 }
 
 fn tell(player: Player, command: &str) -> bool {
-    osascript(&format!("tell application \"{}\" to {command}", player.app())).is_some()
+    osascript(&format!(
+        "tell application \"{}\" to {command}",
+        player.app()
+    ))
+    .is_some()
 }
 
 fn send_action(action: MediaAction) -> bool {
@@ -399,5 +417,8 @@ fn seek_to(position_ms: u64) -> bool {
         return false;
     };
 
-    tell(player, &format!("set player position to {:.3}", position_ms as f64 / 1000.0))
+    tell(
+        player,
+        &format!("set player position to {:.3}", position_ms as f64 / 1000.0),
+    )
 }

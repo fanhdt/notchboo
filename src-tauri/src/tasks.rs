@@ -1,4 +1,3 @@
-
 // src-tauri/src/tasks.rs
 
 //! Penyimpanan tugas dan window Tugas (label `tasks`).
@@ -20,8 +19,8 @@ use std::{
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicU64, Ordering},
         Mutex,
+        atomic::{AtomicU64, Ordering},
     },
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -171,9 +170,7 @@ fn backup_corrupt_tasks(path: &Path) -> Result<PathBuf, String> {
     for _ in 0..100 {
         let counter = BACKUP_COUNTER.fetch_add(1, Ordering::Relaxed);
 
-        let backup = parent.join(format!(
-            "{stem}.corrupt-{timestamp}-{counter}.{extension}"
-        ));
+        let backup = parent.join(format!("{stem}.corrupt-{timestamp}-{counter}.{extension}"));
 
         match fs::rename(path, &backup) {
             Ok(()) => return Ok(backup),
@@ -214,10 +211,7 @@ fn read_tasks(path: &Path) -> Result<String, String> {
 
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
 
-        Err(error) => Err(format!(
-            "tidak bisa membaca {}: {error}",
-            path.display()
-        )),
+        Err(error) => Err(format!("tidak bisa membaca {}: {error}", path.display())),
     }
 }
 
@@ -234,10 +228,7 @@ fn write_tasks_atomically(path: &Path, data: &str) -> Result<(), String> {
     if let Err(error) = fs::rename(&temp, path) {
         let _ = fs::remove_file(&temp);
 
-        return Err(format!(
-            "tidak bisa menyimpan {}: {error}",
-            path.display()
-        ));
+        return Err(format!("tidak bisa menyimpan {}: {error}", path.display()));
     }
 
     Ok(())
@@ -270,8 +261,7 @@ pub fn tasks_save(
         .map_err(|_| "kunci penyimpanan tugas rusak".to_string())?;
 
     // Jangan menulis dokumen yang tidak valid ke penyimpanan.
-    validate_tasks_document(&data)
-        .map_err(|error| format!("data tugas tidak valid: {error}"))?;
+    validate_tasks_document(&data).map_err(|error| format!("data tugas tidak valid: {error}"))?;
 
     let path = data_path(&app)?;
 

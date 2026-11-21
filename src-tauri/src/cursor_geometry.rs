@@ -1,4 +1,3 @@
-
 //! Perhitungan posisi kursor terhadap window island.
 //!
 //! Hanya aritmetika, tanpa API Tauri, supaya mudah diuji. Pembacaan posisi window dan kursor
@@ -29,10 +28,7 @@ impl Default for Hitbox {
 impl Hitbox {
     /// Memastikan ukuran hitbox merupakan nilai finite dan tidak negatif.
     fn is_valid(self) -> bool {
-        self.width.is_finite()
-            && self.height.is_finite()
-            && self.width >= 0.0
-            && self.height >= 0.0
+        self.width.is_finite() && self.height.is_finite() && self.width >= 0.0 && self.height >= 0.0
     }
 }
 
@@ -66,10 +62,7 @@ impl WindowGeometry {
 
     /// Apakah kursor (piksel fisik layar) berada di atas pill, termasuk `HIT_PADDING`.
     pub fn is_over_pill(&self, cursor: (f64, f64), hitbox: Hitbox) -> bool {
-        if !self.is_valid()
-            || !hitbox.is_valid()
-            || !cursor.0.is_finite()
-            || !cursor.1.is_finite()
+        if !self.is_valid() || !hitbox.is_valid() || !cursor.0.is_finite() || !cursor.1.is_finite()
         {
             return false;
         }
@@ -243,13 +236,7 @@ mod tests {
 
     #[test]
     fn invalid_cursor_position_is_rejected() {
-        assert!(!window_100().is_over_pill(
-            (f64::NAN, 10.0),
-            Hitbox::default()
-        ));
-        assert!(!window_100().is_over_pill(
-            (960.0, f64::INFINITY),
-            Hitbox::default()
-        ));
+        assert!(!window_100().is_over_pill((f64::NAN, 10.0), Hitbox::default()));
+        assert!(!window_100().is_over_pill((960.0, f64::INFINITY), Hitbox::default()));
     }
 }

@@ -251,17 +251,29 @@ fn derive_title(kind: ItemKind, body: &str) -> String {
 
 /// Memvalidasi dan merapikan input catatan/snippet.
 /// Isi (`body`) sengaja tidak di-trim supaya indentasi kode tetap utuh.
-pub fn clean_text(kind: ItemKind, title: &str, body: &str, language: Option<&str>) -> ShelfResult<CleanText> {
+pub fn clean_text(
+    kind: ItemKind,
+    title: &str,
+    body: &str,
+    language: Option<&str>,
+) -> ShelfResult<CleanText> {
     if kind == ItemKind::File {
-        return Err(ShelfError::Invalid("File harus diimpor, bukan dibuat sebagai teks.".into()));
+        return Err(ShelfError::Invalid(
+            "File harus diimpor, bukan dibuat sebagai teks.".into(),
+        ));
     }
     if body.len() > MAX_BODY_BYTES {
-        return Err(ShelfError::Invalid(format!("Isi terlalu besar (maksimum {} KB).", MAX_BODY_BYTES / 1000)));
+        return Err(ShelfError::Invalid(format!(
+            "Isi terlalu besar (maksimum {} KB).",
+            MAX_BODY_BYTES / 1000
+        )));
     }
 
     let title = title.trim();
     if title.is_empty() && body.trim().is_empty() {
-        return Err(ShelfError::Invalid("Judul atau isi tidak boleh kosong.".into()));
+        return Err(ShelfError::Invalid(
+            "Judul atau isi tidak boleh kosong.".into(),
+        ));
     }
 
     let title = if title.is_empty() {
@@ -278,5 +290,9 @@ pub fn clean_text(kind: ItemKind, title: &str, body: &str, language: Option<&str
         None
     };
 
-    Ok(CleanText { title, body: body.to_string(), language })
+    Ok(CleanText {
+        title,
+        body: body.to_string(),
+        language,
+    })
 }

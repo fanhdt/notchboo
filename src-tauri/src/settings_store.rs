@@ -55,9 +55,7 @@ impl SettingsStore {
         let settings = match serde_json::from_str::<AppSettings>(&raw) {
             Ok(settings) => settings,
             Err(error) => {
-                return self.recover_corrupt_file(format!(
-                    "Format JSON tidak valid: {error}"
-                ));
+                return self.recover_corrupt_file(format!("Format JSON tidak valid: {error}"));
             }
         };
 
@@ -77,7 +75,7 @@ impl SettingsStore {
         self.save_unlocked(settings)
     }
 
-        /// Mengekspor konfigurasi aktif ke file JSON tujuan.
+    /// Mengekspor konfigurasi aktif ke file JSON tujuan.
     pub fn export_to(&self, destination: impl AsRef<Path>) -> Result<(), String> {
         let _guard = Self::lock();
 
@@ -91,9 +89,7 @@ impl SettingsStore {
 
     /// Membaca dan memvalidasi file konfigurasi eksternal tanpa mengubah
     /// konfigurasi aktif.
-    pub fn read_import_file(
-        path: impl AsRef<Path>,
-    ) -> Result<AppSettings, String> {
+    pub fn read_import_file(path: impl AsRef<Path>) -> Result<AppSettings, String> {
         let path = path.as_ref();
 
         let raw = fs::read_to_string(path).map_err(|error| {
@@ -121,9 +117,10 @@ impl SettingsStore {
         // Pastikan konfigurasi aktif tersedia dan valid.
         self.load_or_default_unlocked()?;
 
-        let parent = self.path.parent().ok_or_else(|| {
-            "Folder konfigurasi tidak ditemukan".to_string()
-        })?;
+        let parent = self
+            .path
+            .parent()
+            .ok_or_else(|| "Folder konfigurasi tidak ditemukan".to_string())?;
 
         let stem = self
             .path
@@ -145,9 +142,7 @@ impl SettingsStore {
         for _ in 0..100 {
             let counter = FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
 
-            let backup = parent.join(format!(
-                "{stem}.backup-{timestamp}-{counter}.{extension}"
-            ));
+            let backup = parent.join(format!("{stem}.backup-{timestamp}-{counter}.{extension}"));
 
             match fs::copy(&self.path, &backup) {
                 Ok(_) => return Ok(backup),
@@ -171,9 +166,10 @@ impl SettingsStore {
             .validate()
             .map_err(|error| format!("Konfigurasi tidak valid: {error}"))?;
 
-        let parent = self.path.parent().ok_or_else(|| {
-            "Lokasi folder konfigurasi tidak valid".to_string()
-        })?;
+        let parent = self
+            .path
+            .parent()
+            .ok_or_else(|| "Lokasi folder konfigurasi tidak valid".to_string())?;
 
         fs::create_dir_all(parent).map_err(|error| {
             format!(
@@ -205,9 +201,10 @@ impl SettingsStore {
 
     /// Memindahkan file rusak ke nama backup unik tanpa menimpa backup lama.
     fn backup_corrupt_file(&self) -> Result<PathBuf, String> {
-        let parent = self.path.parent().ok_or_else(|| {
-            "Folder konfigurasi tidak ditemukan".to_string()
-        })?;
+        let parent = self
+            .path
+            .parent()
+            .ok_or_else(|| "Folder konfigurasi tidak ditemukan".to_string())?;
 
         let stem = self
             .path
@@ -229,9 +226,7 @@ impl SettingsStore {
         for _ in 0..100 {
             let counter = FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
 
-            let backup = parent.join(format!(
-                "{stem}.corrupt-{timestamp}-{counter}.{extension}"
-            ));
+            let backup = parent.join(format!("{stem}.corrupt-{timestamp}-{counter}.{extension}"));
 
             match fs::rename(&self.path, &backup) {
                 Ok(()) => return Ok(backup),
@@ -252,9 +247,10 @@ impl SettingsStore {
 
     /// Menulis temporary file di folder yang sama, lalu mengganti file utama.
     fn write_atomically(&self, contents: &[u8]) -> Result<(), String> {
-        let parent = self.path.parent().ok_or_else(|| {
-            "Folder konfigurasi tidak ditemukan".to_string()
-        })?;
+        let parent = self
+            .path
+            .parent()
+            .ok_or_else(|| "Folder konfigurasi tidak ditemukan".to_string())?;
 
         for _ in 0..100 {
             let counter = FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -276,9 +272,7 @@ impl SettingsStore {
                 }
             };
 
-            let write_result = file
-                .write_all(contents)
-                .and_then(|()| file.sync_all());
+            let write_result = file.write_all(contents).and_then(|()| file.sync_all());
 
             if let Err(error) = write_result {
                 let _ = fs::remove_file(&temp_path);
@@ -304,13 +298,10 @@ impl SettingsStore {
     }
 }
 
-fn write_atomically_to(
-    destination: &Path,
-    contents: &[u8],
-) -> Result<(), String> {
-    let parent = destination.parent().ok_or_else(|| {
-        "Lokasi folder tujuan tidak valid".to_string()
-    })?;
+fn write_atomically_to(destination: &Path, contents: &[u8]) -> Result<(), String> {
+    let parent = destination
+        .parent()
+        .ok_or_else(|| "Lokasi folder tujuan tidak valid".to_string())?;
 
     fs::create_dir_all(parent).map_err(|error| {
         format!(
@@ -334,22 +325,16 @@ fn write_atomically_to(
                 continue;
             }
             Err(error) => {
-                return Err(format!(
-                    "Tidak bisa membuat temporary file export: {error}"
-                ));
+                return Err(format!("Tidak bisa membuat temporary file export: {error}"));
             }
         };
 
-        let write_result = file
-            .write_all(contents)
-            .and_then(|()| file.sync_all());
+        let write_result = file.write_all(contents).and_then(|()| file.sync_all());
 
         if let Err(error) = write_result {
             let _ = fs::remove_file(&temp_path);
 
-            return Err(format!(
-                "Tidak bisa menulis file export: {error}"
-            ));
+            return Err(format!("Tidak bisa menulis file export: {error}"));
         }
 
         drop(file);
@@ -505,10 +490,7 @@ mod tests {
             .collect();
 
         assert_eq!(backups.len(), 1);
-        assert_eq!(
-            fs::read_to_string(&backups[0]).unwrap(),
-            "{invalid json"
-        );
+        assert_eq!(fs::read_to_string(&backups[0]).unwrap(), "{invalid json");
     }
 
     #[test]

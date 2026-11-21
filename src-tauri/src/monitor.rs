@@ -1,8 +1,7 @@
-
 use std::fmt::Display;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Condvar, Mutex,
+    atomic::{AtomicBool, Ordering},
 };
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -124,7 +123,7 @@ pub fn start_monitor(app: &AppHandle) {
                     system.refresh_memory();
                     networks.refresh(true);
 
-                    if ticks % DISK_REFRESH_EVERY_TICKS == 0 {
+                    if ticks.is_multiple_of(DISK_REFRESH_EVERY_TICKS) {
                         disks.refresh(true);
                         disk_stats = read_system_disk(&disks);
                     }
@@ -145,8 +144,7 @@ pub fn start_monitor(app: &AppHandle) {
                     break;
                 }
             }
-        })
-    {
+        }) {
         Ok(handle) => *worker = Some(handle),
         Err(error) => eprintln!("gagal membuat worker monitor: {error}"),
     }
@@ -173,10 +171,10 @@ pub fn stop_monitor(app: &AppHandle) {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .take();
 
-    if let Some(worker) = worker {
-        if worker.join().is_err() {
-            eprintln!("worker monitor berhenti karena panic");
-        }
+    if let Some(worker) = worker
+        && worker.join().is_err()
+    {
+        eprintln!("worker monitor berhenti karena panic");
     }
 }
 

@@ -49,12 +49,19 @@ pub fn import_paths(
     let mut outcome = ImportOutcome::default();
 
     for (index, path) in paths.iter().enumerate() {
-        on_progress(&ImportProgress { index: index + 1, count: paths.len(), file_name: display_name(path) });
+        on_progress(&ImportProgress {
+            index: index + 1,
+            count: paths.len(),
+            file_name: display_name(path),
+        });
 
         let staged = match storage.stage(path) {
             Ok(staged) => staged,
             Err(error) => {
-                outcome.skipped.push(SkippedFile { path: path.display().to_string(), reason: error.to_string() });
+                outcome.skipped.push(SkippedFile {
+                    path: path.display().to_string(),
+                    reason: error.to_string(),
+                });
                 continue;
             }
         };
@@ -75,7 +82,10 @@ pub fn import_paths(
             Ok(item) => outcome.imported.push(item),
             Err(reason) => {
                 storage.discard(&staged);
-                outcome.skipped.push(SkippedFile { path: path.display().to_string(), reason });
+                outcome.skipped.push(SkippedFile {
+                    path: path.display().to_string(),
+                    reason,
+                });
             }
         }
     }
@@ -158,7 +168,9 @@ pub fn file_target(state: &ShelfState, id: i64) -> Result<FileTarget, String> {
     state.with_db_storage(|db, storage| {
         let item = db.get(id)?;
         if item.kind != ItemKind::File {
-            return Err(ShelfError::Invalid("Hanya item file yang bisa dibuka.".into()));
+            return Err(ShelfError::Invalid(
+                "Hanya item file yang bisa dibuka.".into(),
+            ));
         }
 
         let rel = db.stored_path(id)?.ok_or(ShelfError::NotFound)?;
@@ -168,10 +180,14 @@ pub fn file_target(state: &ShelfState, id: i64) -> Result<FileTarget, String> {
 
         if !path.is_file() {
             return Err(ShelfError::Storage(
-                "File tidak ditemukan di penyimpanan. Mungkin sudah dihapus dari luar aplikasi.".into(),
+                "File tidak ditemukan di penyimpanan. Mungkin sudah dihapus dari luar aplikasi."
+                    .into(),
             ));
         }
-        Ok(FileTarget { path, extension: item.extension })
+        Ok(FileTarget {
+            path,
+            extension: item.extension,
+        })
     })
 }
 
@@ -182,7 +198,7 @@ mod tests {
     use super::*;
     use crate::shelf::db::Db;
     use crate::shelf::storage::Storage;
-    use crate::shelf::testutil::{write_file, TempDir};
+    use crate::shelf::testutil::{TempDir, write_file};
 
     const DAY: i64 = 86_400_000;
 
@@ -201,7 +217,11 @@ mod tests {
     }
 
     fn stored_file(state: &ShelfState, id: i64) -> PathBuf {
-        state.with_db_storage(|db, storage| Ok(storage.resolve(&db.stored_path(id)?.unwrap()).unwrap())).unwrap()
+        state
+            .with_db_storage(|db, storage| {
+                Ok(storage.resolve(&db.stored_path(id)?.unwrap()).unwrap())
+            })
+            .unwrap()
     }
 
     #[test]
@@ -210,14 +230,23 @@ mod tests {
         let source = write_file(&tmp.path().join("sumber"), "laporan.txt", b"halo");
         let state = state(&tmp);
 
-        let outcome = import(&state, &[source.clone()]);
+        let outcome = import(&state, std::slice::from_ref(&source));
         assert!(outcome.skipped.is_empty());
         let item = &outcome.imported[0];
 
         assert_eq!(item.kind, ItemKind::File);
-        assert_eq!((item.title.as_str(), item.file_name.as_deref()), ("laporan.txt", Some("laporan.txt")));
-        assert_eq!((item.extension.as_deref(), item.size_bytes), (Some("txt"), Some(4)));
-        assert_eq!(item.source_path.as_deref(), Some(source.to_string_lossy().as_ref()));
+        assert_eq!(
+            (item.title.as_str(), item.file_name.as_deref()),
+            ("laporan.txt", Some("laporan.txt"))
+        );
+        assert_eq!(
+            (item.extension.as_deref(), item.size_bytes),
+            (Some("txt"), Some(4))
+        );
+        assert_eq!(
+            item.source_path.as_deref(),
+            Some(source.to_string_lossy().as_ref())
+        );
         assert!(item.expires_at.is_some());
 
         let stored = stored_file(&state, item.id);
@@ -235,9 +264,15 @@ mod tests {
 
         let outcome = import(&state, &[a, b]);
         assert_eq!(outcome.imported.len(), 2);
-        let (p1, p2) = (stored_file(&state, outcome.imported[0].id), stored_file(&state, outcome.imported[1].id));
+        let (p1, p2) = (
+            stored_file(&state, outcome.imported[0].id),
+            stored_file(&state, outcome.imported[1].id),
+        );
         assert_ne!(p1, p2);
-        assert_eq!((fs::read(p1).unwrap(), fs::read(p2).unwrap()), (b"satu".to_vec(), b"dua".to_vec()));
+        assert_eq!(
+            (fs::read(p1).unwrap(), fs::read(p2).unwrap()),
+            (b"satu".to_vec(), b"dua".to_vec())
+        );
     }
 
     #[test]
@@ -277,7 +312,12 @@ mod tests {
         let big = write_file(tmp.path(), "besar.bin", b"12345");
         let state = state_with(&tmp, |s| s.with_max_file_bytes(3));
 
-        let paths = [tmp.path().to_path_buf(), tmp.path().join("hilang.txt"), big, ok];
+        let paths = [
+            tmp.path().to_path_buf(),
+            tmp.path().join("hilang.txt"),
+            big,
+            ok,
+        ];
         let outcome = import(&state, &paths);
 
         assert_eq!(outcome.imported.len(), 1);
@@ -289,7 +329,9 @@ mod tests {
         assert!(reasons[2].contains("melebihi batas"));
 
         // Tidak ada sisa folder sementara.
-        let leftovers = fs::read_dir(tmp.path().join("shelf").join("files")).unwrap().count();
+        let leftovers = fs::read_dir(tmp.path().join("shelf").join("files"))
+            .unwrap()
+            .count();
         assert_eq!(leftovers, 1);
     }
 
@@ -301,8 +343,14 @@ mod tests {
         let state = state(&tmp);
 
         let mut seen = Vec::new();
-        import_paths(&state, &[a, b], |p| seen.push((p.index, p.count, p.file_name.clone()))).unwrap();
-        assert_eq!(seen, [(1, 2, "a.txt".to_string()), (2, 2, "b.txt".to_string())]);
+        import_paths(&state, &[a, b], |p| {
+            seen.push((p.index, p.count, p.file_name.clone()))
+        })
+        .unwrap();
+        assert_eq!(
+            seen,
+            [(1, 2, "a.txt".to_string()), (2, 2, "b.txt".to_string())]
+        );
     }
 
     #[test]
@@ -310,7 +358,7 @@ mod tests {
         let tmp = TempDir::new("delete");
         let source = write_file(tmp.path(), "x.txt", b"isi");
         let state = state(&tmp);
-        let id = import(&state, &[source.clone()]).imported[0].id;
+        let id = import(&state, std::slice::from_ref(&source)).imported[0].id;
         let stored = stored_file(&state, id);
 
         delete_item(&state, id).unwrap();
@@ -341,8 +389,18 @@ mod tests {
         // Baris yang path-nya diarahkan keluar dari penyimpanan.
         let id = state
             .with_db(|db| {
-                let file = NewFile { title: "x", file_name: "x", source_path: None, extension: None, size_bytes: 1 };
-                Ok(db.insert_file(&file, now_ms(), |_| Ok("../../milik-pengguna/penting.txt".to_string()))?.id)
+                let file = NewFile {
+                    title: "x",
+                    file_name: "x",
+                    source_path: None,
+                    extension: None,
+                    size_bytes: 1,
+                };
+                Ok(db
+                    .insert_file(&file, now_ms(), |_| {
+                        Ok("../../milik-pengguna/penting.txt".to_string())
+                    })?
+                    .id)
             })
             .unwrap();
 
@@ -359,13 +417,24 @@ mod tests {
 
         let items = import(&state, &[a, b]).imported;
         let (old_id, pinned_id) = (items[0].id, items[1].id);
-        state.with_db(|db| db.set_pinned(pinned_id, true, now_ms())).unwrap();
+        state
+            .with_db(|db| db.set_pinned(pinned_id, true, now_ms()))
+            .unwrap();
         let (old_file, pinned_file) = (stored_file(&state, old_id), stored_file(&state, pinned_id));
 
-        assert_eq!(purge_expired(&state, now_ms()).unwrap(), PurgeReport::default()); // belum waktunya
+        assert_eq!(
+            purge_expired(&state, now_ms()).unwrap(),
+            PurgeReport::default()
+        ); // belum waktunya
 
         let report = purge_expired(&state, now_ms() + 8 * DAY).unwrap();
-        assert_eq!(report, PurgeReport { purged: 1, failed: 0 });
+        assert_eq!(
+            report,
+            PurgeReport {
+                purged: 1,
+                failed: 0
+            }
+        );
         assert!(!old_file.exists());
         assert!(pinned_file.exists());
         assert!(state.with_db(|db| db.get(old_id)).is_err());
@@ -382,8 +451,16 @@ mod tests {
         // Baris yang filenya tidak ada.
         let ghost_id = state
             .with_db(|db| {
-                let file = NewFile { title: "hantu", file_name: "hantu.txt", source_path: None, extension: None, size_bytes: 1 };
-                Ok(db.insert_file(&file, now_ms(), |id| Ok(format!("files/{id}/hantu.txt")))?.id)
+                let file = NewFile {
+                    title: "hantu",
+                    file_name: "hantu.txt",
+                    source_path: None,
+                    extension: None,
+                    size_bytes: 1,
+                };
+                Ok(db
+                    .insert_file(&file, now_ms(), |id| Ok(format!("files/{id}/hantu.txt")))?
+                    .id)
             })
             .unwrap();
 
@@ -393,7 +470,13 @@ mod tests {
         fs::create_dir_all(files.join(".incoming-1-0")).unwrap();
 
         let report = sweep_orphans(&state).unwrap();
-        assert_eq!(report, SweepReport { rows_removed: 1, dirs_removed: 2 });
+        assert_eq!(
+            report,
+            SweepReport {
+                rows_removed: 1,
+                dirs_removed: 2
+            }
+        );
         assert!(state.with_db(|db| db.get(ghost_id)).is_err());
         assert!(state.with_db(|db| db.get(good_id)).is_ok());
         assert!(stored_file(&state, good_id).is_file());
@@ -411,17 +494,28 @@ mod tests {
         assert!(target.path.is_file());
         assert_eq!(target.extension.as_deref(), Some("exe")); // huruf kecil, siap dicek daftar berisiko
 
-        let note = state.with_db(|db| db.add_text(ItemKind::Note, "n", "x", None, now_ms())).unwrap();
+        let note = state
+            .with_db(|db| db.add_text(ItemKind::Note, "n", "x", None, now_ms()))
+            .unwrap();
         assert!(file_target(&state, note.id).is_err());
 
         fs::remove_file(&target.path).unwrap(); // dihapus dari luar aplikasi
-        assert!(file_target(&state, id).unwrap_err().contains("tidak ditemukan"));
+        assert!(
+            file_target(&state, id)
+                .unwrap_err()
+                .contains("tidak ditemukan")
+        );
     }
 
     #[test]
     fn unavailable_state_reports_instead_of_panicking() {
         let state = ShelfState::unavailable("disk rusak".into());
-        assert!(state.with_db(|db| db.settings()).unwrap_err().contains("disk rusak"));
+        assert!(
+            state
+                .with_db(|db| db.settings())
+                .unwrap_err()
+                .contains("disk rusak")
+        );
         assert!(import_paths(&state, &[], |_| {}).is_err());
         assert!(delete_item(&state, 1).is_err());
     }

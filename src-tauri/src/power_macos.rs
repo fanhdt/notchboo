@@ -36,12 +36,16 @@ fn parse(text: &str) -> Option<BatteryInfo> {
     let percent_at = line.find('%')?;
     // Angka tepat sebelum tanda "%".
     let before = &line[..percent_at];
-    let start = before.rfind(|c: char| !c.is_ascii_digit()).map_or(0, |index| index + 1);
+    let start = before
+        .rfind(|c: char| !c.is_ascii_digit())
+        .map_or(0, |index| index + 1);
     let percent = before[start..].parse::<u32>().ok()?.min(100) as u8;
 
     let lower = line.to_lowercase();
     // "discharging" dan "not charging" memuat kata "charging", jadi harus dikecualikan.
-    let charging = lower.contains("charging") && !lower.contains("discharging") && !lower.contains("not charging");
+    let charging = lower.contains("charging")
+        && !lower.contains("discharging")
+        && !lower.contains("not charging");
 
     Some(BatteryInfo {
         percent,

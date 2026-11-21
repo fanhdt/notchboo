@@ -1,4 +1,3 @@
-
 // src-tauri/src/notifications.rs
 
 //! Notifikasi pesan WhatsApp untuk island.
@@ -64,17 +63,17 @@ mod windows_source {
         fs,
         path::{Path, PathBuf},
         sync::{
-            atomic::{AtomicBool, Ordering},
             Mutex, OnceLock,
+            atomic::{AtomicBool, Ordering},
         },
         thread::{self, JoinHandle},
         time::{Duration, Instant, SystemTime},
     };
 
-    use rusqlite::{params, types::ValueRef, Connection};
+    use rusqlite::{Connection, params, types::ValueRef};
     use tauri::{AppHandle, Emitter};
 
-    use super::{MessageNotice, MESSAGE_EVENT};
+    use super::{MESSAGE_EVENT, MessageNotice};
 
     const POLL_INTERVAL: Duration = Duration::from_millis(1500);
     /// Setiap kegagalan beruntun menambah jeda sebesar satu `POLL_INTERVAL`, sampai batas ini (±60 detik).
@@ -123,11 +122,7 @@ mod windows_source {
             })
     }
 
-    const DB_FILES: [&str; 3] = [
-        "wpndatabase.db",
-        "wpndatabase.db-wal",
-        "wpndatabase.db-shm",
-    ];
+    const DB_FILES: [&str; 3] = ["wpndatabase.db", "wpndatabase.db-wal", "wpndatabase.db-shm"];
 
     fn watcher_handle() -> &'static Mutex<Option<JoinHandle<()>>> {
         WATCHER_HANDLE.get_or_init(|| Mutex::new(None))
@@ -154,8 +149,7 @@ mod windows_source {
                 if let Err(error) = run(&app) {
                     eprintln!("pembaca notifikasi tidak dijalankan: {error}");
                 }
-            })
-        {
+            }) {
             Ok(worker) => {
                 *handle = Some(worker);
             }
@@ -303,8 +297,7 @@ mod windows_source {
                 Ok(Snapshot::Baseline(max.unwrap_or(0)))
             }
             Some(after) => {
-                let (notices, newest) =
-                    read_new(&connection, after).map_err(schema_error)?;
+                let (notices, newest) = read_new(&connection, after).map_err(schema_error)?;
 
                 Ok(Snapshot::New {
                     notices,
@@ -461,8 +454,10 @@ mod windows_source {
         let body = bytes.strip_prefix(&[0xFF, 0xFE]).unwrap_or(bytes);
 
         let units: Vec<u16> = body
-            .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| u16::from_le_bytes(*pair))
             .collect();
 
         String::from_utf16_lossy(&units)

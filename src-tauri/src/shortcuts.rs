@@ -1,10 +1,5 @@
-
 use tauri::{AppHandle, Manager};
-use tauri_plugin_global_shortcut::{
-    GlobalShortcutExt,
-    Shortcut,
-    ShortcutState,
-};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 use crate::settings::ShortcutSettings;
 
@@ -52,17 +47,12 @@ pub fn replace_shortcuts(
 }
 
 /// Registrasi awal ketika aplikasi mulai berjalan.
-pub fn register_shortcuts(
-    app: &AppHandle,
-    settings: &ShortcutSettings,
-) -> Result<(), String> {
+pub fn register_shortcuts(app: &AppHandle, settings: &ShortcutSettings) -> Result<(), String> {
     replace_shortcuts(app, &ShortcutSettings::default(), settings)
 }
 
 /// Mengubah konfigurasi menjadi daftar shortcut yang sudah divalidasi.
-fn parse_shortcuts(
-    settings: &ShortcutSettings,
-) -> Result<Vec<(&'static str, Shortcut)>, String> {
+fn parse_shortcuts(settings: &ShortcutSettings) -> Result<Vec<(&'static str, Shortcut)>, String> {
     let entries = [
         ("toggleIsland", settings.toggle_island.as_deref()),
         ("openLauncher", settings.open_launcher.as_deref()),
@@ -79,11 +69,9 @@ fn parse_shortcuts(
             continue;
         };
 
-        let shortcut: Shortcut = accelerator.parse().map_err(|error| {
-            format!(
-                "Shortcut {action} tidak valid ({accelerator}): {error}"
-            )
-        })?;
+        let shortcut: Shortcut = accelerator
+            .parse()
+            .map_err(|error| format!("Shortcut {action} tidak valid ({accelerator}): {error}"))?;
 
         if parsed
             .iter()
@@ -101,10 +89,7 @@ fn parse_shortcuts(
 }
 
 /// Mendaftarkan shortcut yang sudah lolos validasi.
-fn register_parsed(
-    app: &AppHandle,
-    shortcuts: &[(&'static str, Shortcut)],
-) -> Result<(), String> {
+fn register_parsed(app: &AppHandle, shortcuts: &[(&'static str, Shortcut)]) -> Result<(), String> {
     let manager = app.global_shortcut();
 
     for (action, shortcut) in shortcuts.iter().copied() {
@@ -114,9 +99,7 @@ fn register_parsed(
                     handle_shortcut_action(app, action);
                 }
             })
-            .map_err(|error| {
-                format!("Gagal mendaftarkan shortcut {action}: {error}")
-            })?;
+            .map_err(|error| format!("Gagal mendaftarkan shortcut {action}: {error}"))?;
     }
 
     Ok(())
@@ -126,13 +109,13 @@ fn register_parsed(
 fn handle_shortcut_action(app: &AppHandle, action: &str) {
     match action {
         "toggleIsland" => {
-            if let Some(window) = app.get_webview_window("main") {
-                if let Ok(visible) = window.is_visible() {
-                    if visible {
-                        let _ = window.hide();
-                    } else {
-                        let _ = window.show();
-                    }
+            if let Some(window) = app.get_webview_window("main")
+                && let Ok(visible) = window.is_visible()
+            {
+                if visible {
+                    let _ = window.hide();
+                } else {
+                    let _ = window.show();
                 }
             }
         }

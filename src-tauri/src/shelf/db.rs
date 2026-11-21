@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use rusqlite::types::Type;
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use super::model::*;
 
@@ -69,7 +69,9 @@ impl Db {
     fn init(mut conn: Connection) -> ShelfResult<Self> {
         conn.busy_timeout(BUSY_TIMEOUT)?;
         // WAL: pembaca tidak memblokir penulis dan tahan terhadap penutupan paksa.
-        conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;")?;
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;",
+        )?;
         Self::migrate(&mut conn)?;
         Ok(Self { conn })
     }
@@ -132,13 +134,23 @@ impl Db {
 
         let mut statement = self.conn.prepare(&sql)?;
         let items = statement
-            .query_map(params![now, kind, filter.pinned_only as i64, pattern, LIST_LIMIT], row_to_item)?
+            .query_map(
+                params![now, kind, filter.pinned_only as i64, pattern, LIST_LIMIT],
+                row_to_item,
+            )?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(items)
     }
 
     /// Menambah catatan atau snippet. Masa berlaku mengikuti pengaturan bawaan.
-    pub fn add_text(&self, kind: ItemKind, title: &str, body: &str, language: Option<&str>, now: i64) -> ShelfResult<ShelfItem> {
+    pub fn add_text(
+        &self,
+        kind: ItemKind,
+        title: &str,
+        body: &str,
+        language: Option<&str>,
+        now: i64,
+    ) -> ShelfResult<ShelfItem> {
         let clean = clean_text(kind, title, body, language)?;
         let expires_at = self.default_expiry()?.expires_at(now);
 
@@ -151,7 +163,14 @@ impl Db {
     }
 
     /// Mengubah catatan atau snippet. Jenis item tidak bisa diganti, dan file tidak bisa diubah lewat sini.
-    pub fn update_text(&self, id: i64, title: &str, body: &str, language: Option<&str>, now: i64) -> ShelfResult<ShelfItem> {
+    pub fn update_text(
+        &self,
+        id: i64,
+        title: &str,
+        body: &str,
+        language: Option<&str>,
+        now: i64,
+    ) -> ShelfResult<ShelfItem> {
         let current = self.get(id)?;
         let clean = clean_text(current.kind, title, body, language)?;
 
@@ -212,8 +231,12 @@ impl Db {
         )?;
         let id = tx.last_insert_rowid();
 
-        let rel_path = finalize(id).map_err(|error| ShelfError::Storage(format!("Tidak bisa menyimpan file: {error}")))?;
-        tx.execute("UPDATE items SET stored_rel_path = ?2 WHERE id = ?1", params![id, rel_path])?;
+        let rel_path = finalize(id)
+            .map_err(|error| ShelfError::Storage(format!("Tidak bisa menyimpan file: {error}")))?;
+        tx.execute(
+            "UPDATE items SET stored_rel_path = ?2 WHERE id = ?1",
+            params![id, rel_path],
+        )?;
         tx.commit()?;
 
         self.get(id)
@@ -222,7 +245,11 @@ impl Db {
     /// Path relatif file terkelola milik `id`. `None` untuk catatan dan snippet.
     pub fn stored_path(&self, id: i64) -> ShelfResult<Option<String>> {
         self.conn
-            .query_row("SELECT stored_rel_path FROM items WHERE id = ?1", [id], |row| row.get::<_, Option<String>>(0))
+            .query_row(
+                "SELECT stored_rel_path FROM items WHERE id = ?1",
+                [id],
+                |row| row.get::<_, Option<String>>(0),
+            )
             .optional()?
             .ok_or(ShelfError::NotFound)
     }
@@ -240,7 +267,9 @@ impl Db {
 
     /// Semua item file beserta path relatifnya (untuk sapuan konsistensi).
     pub fn file_rows(&self) -> ShelfResult<Vec<(i64, Option<String>)>> {
-        let mut statement = self.conn.prepare("SELECT id, stored_rel_path FROM items WHERE kind = 'file'")?;
+        let mut statement = self
+            .conn
+            .prepare("SELECT id, stored_rel_path FROM items WHERE kind = 'file'")?;
         let rows = statement
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<Result<Vec<_>, _>>()?;
@@ -261,7 +290,9 @@ impl Db {
     fn get_setting(&self, key: &str) -> ShelfResult<Option<String>> {
         Ok(self
             .conn
-            .query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| row.get(0))
+            .query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
+                row.get(0)
+            })
             .optional()?)
     }
 
@@ -287,14 +318,20 @@ impl Db {
     }
 
     pub fn settings(&self) -> ShelfResult<Settings> {
-        Ok(Settings { default_expiry: self.default_expiry()? })
+        Ok(Settings {
+            default_expiry: self.default_expiry()?,
+        })
     }
 }
 
 fn row_to_item(row: &Row<'_>) -> rusqlite::Result<ShelfItem> {
     let kind_text: String = row.get(1)?;
     let kind = ItemKind::parse(&kind_text).ok_or_else(|| {
-        rusqlite::Error::FromSqlConversionFailure(1, Type::Text, format!("kind tidak dikenal: {kind_text}").into())
+        rusqlite::Error::FromSqlConversionFailure(
+            1,
+            Type::Text,
+            format!("kind tidak dikenal: {kind_text}").into(),
+        )
     })?;
 
     Ok(ShelfItem {
@@ -351,7 +388,10 @@ mod tests {
     #[test]
     fn migration_sets_version_and_is_safe_to_rerun() {
         let mut db = db();
-        let version: i64 = db.conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+        let version: i64 = db
+            .conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
         Db::migrate(&mut db.conn).unwrap();
     }
@@ -359,14 +399,20 @@ mod tests {
     #[test]
     fn rejects_database_from_newer_version() {
         let mut conn = Connection::open_in_memory().unwrap();
-        conn.pragma_update(None, "user_version", SCHEMA_VERSION + 1).unwrap();
-        assert!(matches!(Db::migrate(&mut conn), Err(ShelfError::Invalid(_))));
+        conn.pragma_update(None, "user_version", SCHEMA_VERSION + 1)
+            .unwrap();
+        assert!(matches!(
+            Db::migrate(&mut conn),
+            Err(ShelfError::Invalid(_))
+        ));
     }
 
     #[test]
     fn untitled_note_uses_first_line_and_default_expiry() {
         let db = db();
-        let item = db.add_text(ItemKind::Note, "  ", "\n  baris pertama \nkedua", None, T).unwrap();
+        let item = db
+            .add_text(ItemKind::Note, "  ", "\n  baris pertama \nkedua", None, T)
+            .unwrap();
         assert_eq!(item.title, "baris pertama");
         assert_eq!(item.expires_at, Some(T + 7 * DAY));
         assert!(!item.pinned);
@@ -376,25 +422,40 @@ mod tests {
     #[test]
     fn snippet_keeps_lowercase_language_note_drops_it() {
         let db = db();
-        let snippet = db.add_text(ItemKind::Snippet, "fn", "let x = 1;", Some(" Rust "), T).unwrap();
+        let snippet = db
+            .add_text(ItemKind::Snippet, "fn", "let x = 1;", Some(" Rust "), T)
+            .unwrap();
         assert_eq!(snippet.language.as_deref(), Some("rust"));
-        let plain = db.add_text(ItemKind::Note, "n", "x", Some("rust"), T).unwrap();
+        let plain = db
+            .add_text(ItemKind::Note, "n", "x", Some("rust"), T)
+            .unwrap();
         assert_eq!(plain.language, None);
     }
 
     #[test]
     fn rejects_empty_oversized_and_file_kind_input() {
         let db = db();
-        assert!(matches!(db.add_text(ItemKind::Note, " ", " \n", None, T), Err(ShelfError::Invalid(_))));
+        assert!(matches!(
+            db.add_text(ItemKind::Note, " ", " \n", None, T),
+            Err(ShelfError::Invalid(_))
+        ));
         let big = "x".repeat(MAX_BODY_BYTES + 1);
-        assert!(matches!(db.add_text(ItemKind::Note, "t", &big, None, T), Err(ShelfError::Invalid(_))));
-        assert!(matches!(db.add_text(ItemKind::File, "t", "x", None, T), Err(ShelfError::Invalid(_))));
+        assert!(matches!(
+            db.add_text(ItemKind::Note, "t", &big, None, T),
+            Err(ShelfError::Invalid(_))
+        ));
+        assert!(matches!(
+            db.add_text(ItemKind::File, "t", "x", None, T),
+            Err(ShelfError::Invalid(_))
+        ));
     }
 
     #[test]
     fn body_indentation_is_preserved() {
         let db = db();
-        let item = db.add_text(ItemKind::Snippet, "t", "  a\n\tb\n", None, T).unwrap();
+        let item = db
+            .add_text(ItemKind::Snippet, "t", "  a\n\tb\n", None, T)
+            .unwrap();
         assert_eq!(item.body.as_deref(), Some("  a\n\tb\n"));
     }
 
@@ -428,7 +489,10 @@ mod tests {
         note(&db, r"path\to", T + 4);
 
         let find = |q: &str| {
-            let filter = ListFilter { query: Some(q.into()), ..Default::default() };
+            let filter = ListFilter {
+                query: Some(q.into()),
+                ..Default::default()
+            };
             db.list(&filter, T + 10).unwrap()
         };
         assert_eq!(titles(&find("100%")), ["100% fokus"]);
@@ -441,7 +505,8 @@ mod tests {
     #[test]
     fn search_covers_body_and_file_name() {
         let db = db();
-        db.add_text(ItemKind::Note, "judul", "ada kata rahasia di sini", None, T).unwrap();
+        db.add_text(ItemKind::Note, "judul", "ada kata rahasia di sini", None, T)
+            .unwrap();
         db.conn
             .execute(
                 "INSERT INTO items (kind, title, file_name, pinned, created_at, updated_at) \
@@ -451,7 +516,10 @@ mod tests {
             .unwrap();
 
         let find = |q: &str| {
-            let filter = ListFilter { query: Some(q.into()), ..Default::default() };
+            let filter = ListFilter {
+                query: Some(q.into()),
+                ..Default::default()
+            };
             db.list(&filter, T + 10).unwrap()
         };
         assert_eq!(find("rahasia").len(), 1);
@@ -462,13 +530,20 @@ mod tests {
     fn filters_by_kind_and_pinned_only() {
         let db = db();
         let n = note(&db, "catatan", T);
-        db.add_text(ItemKind::Snippet, "kode", "x", None, T + 1).unwrap();
+        db.add_text(ItemKind::Snippet, "kode", "x", None, T + 1)
+            .unwrap();
         db.set_pinned(n.id, true, T + 2).unwrap();
 
-        let by_kind = ListFilter { kind: Some(ItemKind::Snippet), ..Default::default() };
+        let by_kind = ListFilter {
+            kind: Some(ItemKind::Snippet),
+            ..Default::default()
+        };
         assert_eq!(titles(&db.list(&by_kind, T + 3).unwrap()), ["kode"]);
 
-        let pinned = ListFilter { pinned_only: true, ..Default::default() };
+        let pinned = ListFilter {
+            pinned_only: true,
+            ..Default::default()
+        };
         assert_eq!(titles(&db.list(&pinned, T + 3).unwrap()), ["catatan"]);
     }
 
@@ -502,18 +577,30 @@ mod tests {
     #[test]
     fn list_returns_body_preview_but_get_returns_full_body() {
         let db = db();
-        let item = db.add_text(ItemKind::Note, "panjang", &"x".repeat(1000), None, T).unwrap();
+        let item = db
+            .add_text(ItemKind::Note, "panjang", &"x".repeat(1000), None, T)
+            .unwrap();
         let listed = db.list(&ListFilter::default(), T).unwrap();
-        assert_eq!(listed[0].body.as_deref().map(|b| b.chars().count()), Some(LIST_PREVIEW_CHARS));
+        assert_eq!(
+            listed[0].body.as_deref().map(|b| b.chars().count()),
+            Some(LIST_PREVIEW_CHARS)
+        );
         assert_eq!(db.get(item.id).unwrap().body.map(|b| b.len()), Some(1000));
     }
 
     #[test]
     fn update_text_works_and_rejects_file_items() {
         let db = db();
-        let item = db.add_text(ItemKind::Snippet, "lama", "a", Some("js"), T).unwrap();
-        let updated = db.update_text(item.id, "baru", "b", Some("TS"), T + 5).unwrap();
-        assert_eq!((updated.title.as_str(), updated.body.as_deref()), ("baru", Some("b")));
+        let item = db
+            .add_text(ItemKind::Snippet, "lama", "a", Some("js"), T)
+            .unwrap();
+        let updated = db
+            .update_text(item.id, "baru", "b", Some("TS"), T + 5)
+            .unwrap();
+        assert_eq!(
+            (updated.title.as_str(), updated.body.as_deref()),
+            ("baru", Some("b"))
+        );
         assert_eq!(updated.language.as_deref(), Some("ts"));
         assert_eq!((updated.created_at, updated.updated_at), (T, T + 5));
 
@@ -525,41 +612,80 @@ mod tests {
             )
             .unwrap();
         let file_id = db.conn.last_insert_rowid();
-        assert!(matches!(db.update_text(file_id, "x", "y", None, T), Err(ShelfError::Invalid(_))));
-        assert!(matches!(db.update_text(9999, "x", "y", None, T), Err(ShelfError::NotFound)));
+        assert!(matches!(
+            db.update_text(file_id, "x", "y", None, T),
+            Err(ShelfError::Invalid(_))
+        ));
+        assert!(matches!(
+            db.update_text(9999, "x", "y", None, T),
+            Err(ShelfError::NotFound)
+        ));
     }
 
     #[test]
     fn set_expiry_and_delete() {
         let db = db();
         let item = note(&db, "a", T);
-        assert_eq!(db.set_expiry(item.id, Expiry::OneDay, T + 10).unwrap().expires_at, Some(T + 10 + DAY));
-        assert_eq!(db.set_expiry(item.id, Expiry::Never, T + 10).unwrap().expires_at, None);
+        assert_eq!(
+            db.set_expiry(item.id, Expiry::OneDay, T + 10)
+                .unwrap()
+                .expires_at,
+            Some(T + 10 + DAY)
+        );
+        assert_eq!(
+            db.set_expiry(item.id, Expiry::Never, T + 10)
+                .unwrap()
+                .expires_at,
+            None
+        );
 
         db.delete(item.id).unwrap();
         assert!(matches!(db.get(item.id), Err(ShelfError::NotFound)));
         assert!(matches!(db.delete(item.id), Err(ShelfError::NotFound)));
-        assert!(matches!(db.set_pinned(item.id, true, T), Err(ShelfError::NotFound)));
+        assert!(matches!(
+            db.set_pinned(item.id, true, T),
+            Err(ShelfError::NotFound)
+        ));
     }
 
     #[test]
     fn insert_file_stores_metadata_and_passes_id_to_finalize() {
         let db = db();
-        let file = NewFile { title: "a.txt", file_name: "a.txt", source_path: Some(r"C:\x\a.txt"), extension: Some("txt"), size_bytes: 5 };
-        let item = db.insert_file(&file, T, |id| Ok(format!("files/{id}/a.txt"))).unwrap();
+        let file = NewFile {
+            title: "a.txt",
+            file_name: "a.txt",
+            source_path: Some(r"C:\x\a.txt"),
+            extension: Some("txt"),
+            size_bytes: 5,
+        };
+        let item = db
+            .insert_file(&file, T, |id| Ok(format!("files/{id}/a.txt")))
+            .unwrap();
 
         assert_eq!(item.kind, ItemKind::File);
-        assert_eq!((item.size_bytes, item.extension.as_deref()), (Some(5), Some("txt")));
+        assert_eq!(
+            (item.size_bytes, item.extension.as_deref()),
+            (Some(5), Some("txt"))
+        );
         assert_eq!(item.source_path.as_deref(), Some(r"C:\x\a.txt"));
         assert_eq!(item.expires_at, Some(T + 7 * DAY));
-        assert_eq!(db.stored_path(item.id).unwrap(), Some(format!("files/{}/a.txt", item.id)));
+        assert_eq!(
+            db.stored_path(item.id).unwrap(),
+            Some(format!("files/{}/a.txt", item.id))
+        );
         assert_eq!(db.file_rows().unwrap().len(), 1);
     }
 
     #[test]
     fn insert_file_rolls_back_when_finalize_fails() {
         let db = db();
-        let file = NewFile { title: "a", file_name: "a", source_path: None, extension: None, size_bytes: 1 };
+        let file = NewFile {
+            title: "a",
+            file_name: "a",
+            source_path: None,
+            extension: None,
+            size_bytes: 1,
+        };
         let result = db.insert_file(&file, T, |_| Err(std::io::Error::other("disk penuh")));
         assert!(matches!(result, Err(ShelfError::Storage(_))));
         assert!(db.list(&ListFilter::default(), T).unwrap().is_empty());
@@ -584,7 +710,12 @@ mod tests {
         db.set_pinned(pinned.id, true, T).unwrap();
 
         assert!(db.expired(T + DAY).unwrap().is_empty());
-        let ids: Vec<i64> = db.expired(T + 8 * DAY).unwrap().into_iter().map(|(id, _)| id).collect();
+        let ids: Vec<i64> = db
+            .expired(T + 8 * DAY)
+            .unwrap()
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
         assert_eq!(ids, [old.id]);
     }
 
@@ -601,12 +732,19 @@ mod tests {
 
     #[test]
     fn data_survives_reopening_database() {
-        let path = std::env::temp_dir().join(format!("notchboo-test-{}-{}.db", std::process::id(), now_ms()));
+        let path = std::env::temp_dir().join(format!(
+            "notchboo-test-{}-{}.db",
+            std::process::id(),
+            now_ms()
+        ));
         {
             let db = Db::open(&path).unwrap();
             db.add_text(ItemKind::Note, "awet", "x", None, T).unwrap();
         }
-        let items = Db::open(&path).unwrap().list(&ListFilter::default(), T).unwrap();
+        let items = Db::open(&path)
+            .unwrap()
+            .list(&ListFilter::default(), T)
+            .unwrap();
         assert_eq!(titles(&items), ["awet"]);
 
         for suffix in ["", "-wal", "-shm"] {
@@ -617,7 +755,9 @@ mod tests {
     #[test]
     fn serialization_to_react_uses_camel_case() {
         let db = db();
-        let item = db.add_text(ItemKind::Snippet, "t", "x", Some("rs"), T).unwrap();
+        let item = db
+            .add_text(ItemKind::Snippet, "t", "x", Some("rs"), T)
+            .unwrap();
         let json = serde_json::to_value(&item).unwrap();
         assert_eq!(json["kind"], "snippet");
         assert_eq!(json["createdAt"], T);
@@ -627,10 +767,14 @@ mod tests {
         let settings = serde_json::to_value(db.settings().unwrap()).unwrap();
         assert_eq!(settings["defaultExpiry"], "7d");
 
-        let filter: ListFilter = serde_json::from_str(r#"{"query":"a","kind":"note","pinnedOnly":true}"#).unwrap();
+        let filter: ListFilter =
+            serde_json::from_str(r#"{"query":"a","kind":"note","pinnedOnly":true}"#).unwrap();
         assert!(filter.pinned_only && filter.kind == Some(ItemKind::Note));
         let empty: ListFilter = serde_json::from_str("{}").unwrap();
         assert!(empty.query.is_none() && !empty.pinned_only);
-        assert_eq!(serde_json::from_str::<Expiry>("\"1d\"").unwrap(), Expiry::OneDay);
+        assert_eq!(
+            serde_json::from_str::<Expiry>("\"1d\"").unwrap(),
+            Expiry::OneDay
+        );
     }
 }

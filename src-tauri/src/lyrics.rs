@@ -60,12 +60,11 @@ async fn fetch_synced(title: &str, artist: &str, album: &str, duration_s: u64) -
             .await
             .ok()?;
 
-        if response.status().is_success() {
-            if let Ok(track) = response.json::<LrclibTrack>().await {
-                if track.synced_lyrics.is_some() {
-                    return track.synced_lyrics;
-                }
-            }
+        if response.status().is_success()
+            && let Ok(track) = response.json::<LrclibTrack>().await
+            && track.synced_lyrics.is_some()
+        {
+            return track.synced_lyrics;
         }
     }
 

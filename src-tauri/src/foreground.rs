@@ -1,4 +1,3 @@
-
 //! Mendeteksi apakah ada aplikasi lain yang sedang aktif di depan.
 //!
 //! React memakainya untuk mode peek: saat aplikasi lain aktif, island bersembunyi ke atas
@@ -7,7 +6,7 @@
 use std::{
     sync::{
         Mutex, OnceLock,
-        mpsc::{self, Sender, RecvTimeoutError},
+        mpsc::{self, RecvTimeoutError, Sender},
     },
     thread::{self, JoinHandle},
     time::Duration,
@@ -42,9 +41,7 @@ pub struct ForegroundShared {
 
 #[tauri::command]
 pub fn get_foreground_busy(shared: State<'_, ForegroundShared>) -> bool {
-    shared
-        .busy
-        .load(std::sync::atomic::Ordering::Relaxed)
+    shared.busy.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 struct ForegroundWatcher {
@@ -87,17 +84,12 @@ pub fn start_foreground_watcher(app: &AppHandle) {
                 let busy = is_other_app_active();
                 let shared = app.state::<ForegroundShared>();
 
-                if shared
-                    .busy
-                    .swap(busy, std::sync::atomic::Ordering::Relaxed)
-                    != busy
-                {
+                if shared.busy.swap(busy, std::sync::atomic::Ordering::Relaxed) != busy {
                     // Gagal mengirim event bukan masalah fatal; status terbaru tetap tersimpan.
                     let _ = app.emit(BUSY_EVENT, busy);
                 }
             }
-        })
-    {
+        }) {
         Ok(handle) => handle,
         Err(error) => {
             eprintln!("gagal memulai foreground watcher: {error}");

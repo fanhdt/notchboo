@@ -11,16 +11,20 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 use super::model::{
-    now_ms, Expiry, ImportOutcome, ListFilter, NewText, OpenOutcome, Settings, ShelfItem, TextUpdate,
+    Expiry, ImportOutcome, ListFilter, NewText, OpenOutcome, Settings, ShelfItem, TextUpdate,
+    now_ms,
 };
-use super::{ops, storage::is_risky_extension, ShelfState};
+use super::{ShelfState, ops, storage::is_risky_extension};
 
 /// Dikirim ke semua window (Shelf dan island) sebelum tiap file disalin (payload: `ImportProgress`).
 const IMPORT_PROGRESS_EVENT: &str = "shelf-import-progress";
 
 /// Daftar item. `body` hanya potongan awal; pakai `shelf_get` untuk isi lengkap.
 #[tauri::command(async)]
-pub fn shelf_list(state: State<'_, ShelfState>, filter: Option<ListFilter>) -> Result<Vec<ShelfItem>, String> {
+pub fn shelf_list(
+    state: State<'_, ShelfState>,
+    filter: Option<ListFilter>,
+) -> Result<Vec<ShelfItem>, String> {
     let filter = filter.unwrap_or_default();
     state.with_db(|db| db.list(&filter, now_ms()))
 }
@@ -32,21 +36,49 @@ pub fn shelf_get(state: State<'_, ShelfState>, id: i64) -> Result<ShelfItem, Str
 
 #[tauri::command(async)]
 pub fn shelf_add_text(state: State<'_, ShelfState>, input: NewText) -> Result<ShelfItem, String> {
-    state.with_db(|db| db.add_text(input.kind, &input.title, &input.body, input.language.as_deref(), now_ms()))
+    state.with_db(|db| {
+        db.add_text(
+            input.kind,
+            &input.title,
+            &input.body,
+            input.language.as_deref(),
+            now_ms(),
+        )
+    })
 }
 
 #[tauri::command(async)]
-pub fn shelf_update_text(state: State<'_, ShelfState>, id: i64, input: TextUpdate) -> Result<ShelfItem, String> {
-    state.with_db(|db| db.update_text(id, &input.title, &input.body, input.language.as_deref(), now_ms()))
+pub fn shelf_update_text(
+    state: State<'_, ShelfState>,
+    id: i64,
+    input: TextUpdate,
+) -> Result<ShelfItem, String> {
+    state.with_db(|db| {
+        db.update_text(
+            id,
+            &input.title,
+            &input.body,
+            input.language.as_deref(),
+            now_ms(),
+        )
+    })
 }
 
 #[tauri::command(async)]
-pub fn shelf_set_pinned(state: State<'_, ShelfState>, id: i64, pinned: bool) -> Result<ShelfItem, String> {
+pub fn shelf_set_pinned(
+    state: State<'_, ShelfState>,
+    id: i64,
+    pinned: bool,
+) -> Result<ShelfItem, String> {
     state.with_db(|db| db.set_pinned(id, pinned, now_ms()))
 }
 
 #[tauri::command(async)]
-pub fn shelf_set_expiry(state: State<'_, ShelfState>, id: i64, expiry: Expiry) -> Result<ShelfItem, String> {
+pub fn shelf_set_expiry(
+    state: State<'_, ShelfState>,
+    id: i64,
+    expiry: Expiry,
+) -> Result<ShelfItem, String> {
     state.with_db(|db| db.set_expiry(id, expiry, now_ms()))
 }
 
@@ -58,13 +90,21 @@ pub fn shelf_delete(state: State<'_, ShelfState>, id: i64) -> Result<(), String>
 
 /// Mengimpor file dari daftar path (hasil drag and drop). File yang gagal dilaporkan di `skipped`.
 #[tauri::command(async)]
-pub fn shelf_import_paths(app: AppHandle, state: State<'_, ShelfState>, paths: Vec<String>) -> Result<ImportOutcome, String> {
+pub fn shelf_import_paths(
+    app: AppHandle,
+    state: State<'_, ShelfState>,
+    paths: Vec<String>,
+) -> Result<ImportOutcome, String> {
     import(&app, &state, paths.into_iter().map(PathBuf::from).collect())
 }
 
 /// Membuka dialog pemilih file bawaan Windows lalu mengimpor hasilnya. Dibatalkan = hasil kosong.
 #[tauri::command(async)]
-pub fn shelf_pick_and_import(app: AppHandle, window: Window, state: State<'_, ShelfState>) -> Result<ImportOutcome, String> {
+pub fn shelf_pick_and_import(
+    app: AppHandle,
+    window: Window,
+    state: State<'_, ShelfState>,
+) -> Result<ImportOutcome, String> {
     let picked = app
         .dialog()
         .file()
@@ -84,7 +124,11 @@ pub fn shelf_pick_and_import(app: AppHandle, window: Window, state: State<'_, Sh
     import(&app, &state, paths)
 }
 
-fn import(app: &AppHandle, state: &ShelfState, paths: Vec<PathBuf>) -> Result<ImportOutcome, String> {
+fn import(
+    app: &AppHandle,
+    state: &ShelfState,
+    paths: Vec<PathBuf>,
+) -> Result<ImportOutcome, String> {
     ops::import_paths(state, &paths, |progress| {
         let _ = app.emit(IMPORT_PROGRESS_EVENT, progress);
     })
@@ -117,7 +161,9 @@ pub fn shelf_open(
 #[tauri::command(async)]
 pub fn shelf_reveal(app: AppHandle, state: State<'_, ShelfState>, id: i64) -> Result<(), String> {
     let target = ops::file_target(&state, id)?;
-    app.opener().reveal_item_in_dir(&target.path).map_err(|error| error.to_string())
+    app.opener()
+        .reveal_item_in_dir(&target.path)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command(async)]
@@ -126,6 +172,9 @@ pub fn shelf_get_settings(state: State<'_, ShelfState>) -> Result<Settings, Stri
 }
 
 #[tauri::command(async)]
-pub fn shelf_set_default_expiry(state: State<'_, ShelfState>, expiry: Expiry) -> Result<(), String> {
+pub fn shelf_set_default_expiry(
+    state: State<'_, ShelfState>,
+    expiry: Expiry,
+) -> Result<(), String> {
     state.with_db(|db| db.set_default_expiry(expiry))
 }

@@ -1,10 +1,9 @@
-
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use windows::Foundation::{DateTime, TimeSpan, TypedEventHandler};
@@ -17,7 +16,7 @@ use windows::Media::Control::{
     TimelinePropertiesChangedEventArgs,
 };
 use windows::Storage::Streams::DataReader;
-use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
+use windows::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize};
 
 /// Event yang didengarkan React: lagu berganti (berat, membawa artwork).
 const MEDIA_EVENT: &str = "media-changed";
@@ -116,7 +115,9 @@ impl Subscription {
     fn unsubscribe(self) {
         let _ = self.session.RemoveMediaPropertiesChanged(self.media_token);
         let _ = self.session.RemovePlaybackInfoChanged(self.playback_token);
-        let _ = self.session.RemoveTimelinePropertiesChanged(self.timeline_token);
+        let _ = self
+            .session
+            .RemoveTimelinePropertiesChanged(self.timeline_token);
     }
 }
 
@@ -128,10 +129,7 @@ struct ManagerSubscription {
 }
 
 impl ManagerSubscription {
-    fn subscribe(
-        manager: &SessionManager,
-        sender: &Sender<Wake>,
-    ) -> windows::core::Result<Self> {
+    fn subscribe(manager: &SessionManager, sender: &Sender<Wake>) -> windows::core::Result<Self> {
         let tx = sender.clone();
         let on_current_changed =
             TypedEventHandler::<SessionManager, CurrentSessionChangedEventArgs>::new(
@@ -145,12 +143,10 @@ impl ManagerSubscription {
 
         let tx = sender.clone();
         let on_sessions_changed =
-            TypedEventHandler::<SessionManager, SessionsChangedEventArgs>::new(
-                move |_, _| {
-                    let _ = tx.send(Wake::SessionChanged);
-                    Ok(())
-                },
-            );
+            TypedEventHandler::<SessionManager, SessionsChangedEventArgs>::new(move |_, _| {
+                let _ = tx.send(Wake::SessionChanged);
+                Ok(())
+            });
 
         let sessions_token = match manager.SessionsChanged(&on_sessions_changed) {
             Ok(token) => token,
@@ -168,9 +164,7 @@ impl ManagerSubscription {
     }
 
     fn unsubscribe(self) {
-        let _ = self
-            .manager
-            .RemoveCurrentSessionChanged(self.current_token);
+        let _ = self.manager.RemoveCurrentSessionChanged(self.current_token);
         let _ = self.manager.RemoveSessionsChanged(self.sessions_token);
     }
 }
@@ -424,12 +418,7 @@ fn run_media_watcher(
     emit_playback(app, read_playback_from(&manager));
 
     // Tidur sampai ada pesan atau sinyal shutdown.
-    loop {
-        let first = match receiver.recv() {
-            Ok(wake) => wake,
-            Err(_) => break,
-        };
-
+    while let Ok(first) = receiver.recv() {
         let mut pending = Pending::default();
         let mut shutdown = pending.record(first);
 
@@ -461,7 +450,7 @@ fn run_media_watcher(
             emit_media(app, read_media_info_from(&manager));
         }
 
-       emit_playback(app, read_playback_from(&manager));
+        emit_playback(app, read_playback_from(&manager));
     }
 
     // Lepaskan listener sebelum keluar dari worker.

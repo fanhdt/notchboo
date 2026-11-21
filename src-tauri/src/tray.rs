@@ -1,4 +1,3 @@
-
 //! Ikon Mochi di system tray.
 //!
 //! Menu tray menyediakan kontrol Peek Behavior, autostart, notifikasi uji,
@@ -8,9 +7,9 @@ use std::fs;
 use std::path::PathBuf;
 
 use tauri::{
+    AppHandle, Emitter, Manager, Wry,
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Emitter, Manager, Wry,
 };
 
 use crate::{
@@ -89,8 +88,7 @@ fn load_mode(app: &AppHandle) -> PeekMode {
         }
     };
 
-    let current_mode =
-        PeekMode::from_behavior(settings.appearance.island.peek_behavior);
+    let current_mode = PeekMode::from_behavior(settings.appearance.island.peek_behavior);
 
     let Some(legacy_path) = legacy_settings_path(app) else {
         return current_mode;
@@ -99,8 +97,7 @@ fn load_mode(app: &AppHandle) -> PeekMode {
     match fs::read_to_string(&legacy_path) {
         Ok(value) if current_mode == PeekMode::WhenBusy => {
             if let Some(legacy_mode) = PeekMode::from_setting(&value) {
-                settings.appearance.island.peek_behavior =
-                    legacy_mode.into_behavior();
+                settings.appearance.island.peek_behavior = legacy_mode.into_behavior();
 
                 match store.save(&settings) {
                     Ok(()) => {
@@ -113,9 +110,7 @@ fn load_mode(app: &AppHandle) -> PeekMode {
                         return legacy_mode;
                     }
                     Err(error) => {
-                        eprintln!(
-                            "[Settings] Gagal memigrasikan Peek Behavior lama: {error}"
-                        );
+                        eprintln!("[Settings] Gagal memigrasikan Peek Behavior lama: {error}");
                     }
                 }
             } else {
@@ -128,16 +123,12 @@ fn load_mode(app: &AppHandle) -> PeekMode {
         Ok(_) => {
             // Centralized settings sudah memiliki nilai sendiri dan menjadi sumber utama.
             if let Err(error) = fs::remove_file(&legacy_path) {
-                eprintln!(
-                    "[Settings] Gagal menghapus file Peek Behavior lama: {error}"
-                );
+                eprintln!("[Settings] Gagal menghapus file Peek Behavior lama: {error}");
             }
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => {
-            eprintln!(
-                "[Settings] Gagal membaca file Peek Behavior lama: {error}"
-            );
+            eprintln!("[Settings] Gagal membaca file Peek Behavior lama: {error}");
         }
     }
 
@@ -145,11 +136,7 @@ fn load_mode(app: &AppHandle) -> PeekMode {
 }
 
 /// Menyimpan perubahan ke centralized settings sebelum memperbarui menu tray.
-fn apply_mode(
-    app: &AppHandle,
-    mode: PeekMode,
-    checks: &[(PeekMode, CheckMenuItem<Wry>)],
-) {
+fn apply_mode(app: &AppHandle, mode: PeekMode, checks: &[(PeekMode, CheckMenuItem<Wry>)]) {
     let store = app.state::<SettingsStore>();
 
     let mut settings: AppSettings = match store.load_or_default() {
@@ -183,14 +170,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     let mode = load_mode(app);
 
     let make = |id: &str, label: &str, item_mode: PeekMode| {
-        CheckMenuItem::with_id(
-            app,
-            id,
-            label,
-            true,
-            mode == item_mode,
-            None::<&str>,
-        )
+        CheckMenuItem::with_id(app, id, label, true, mode == item_mode, None::<&str>)
     };
 
     let when_busy = make(
@@ -199,17 +179,9 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         PeekMode::WhenBusy,
     )?;
 
-    let always = make(
-        ID_ALWAYS,
-        "Peek terus-menerus",
-        PeekMode::Always,
-    )?;
+    let always = make(ID_ALWAYS, "Peek terus-menerus", PeekMode::Always)?;
 
-    let standby = make(
-        ID_STANDBY,
-        "Standby (selalu terbuka)",
-        PeekMode::Standby,
-    )?;
+    let standby = make(ID_STANDBY, "Standby (selalu terbuka)", PeekMode::Standby)?;
 
     let autostart_item = CheckMenuItem::with_id(
         app,
@@ -220,8 +192,13 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         None::<&str>,
     )?;
 
-    let test_notice =
-        MenuItem::with_id(app, ID_TEST_NOTICE, "Uji notifikasi pesan", true, None::<&str>)?;
+    let test_notice = MenuItem::with_id(
+        app,
+        ID_TEST_NOTICE,
+        "Uji notifikasi pesan",
+        true,
+        None::<&str>,
+    )?;
 
     let quit = MenuItem::with_id(app, ID_QUIT, "Keluar", true, None::<&str>)?;
 
@@ -261,14 +238,9 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         ID_ALWAYS => apply_mode(app, PeekMode::Always, &checks),
         ID_STANDBY => apply_mode(app, PeekMode::Standby, &checks),
         ID_AUTOSTART => {
-            crate::autostart::set_enabled(
-                app,
-                !crate::autostart::is_enabled(app),
-            );
+            crate::autostart::set_enabled(app, !crate::autostart::is_enabled(app));
 
-            let _ = autostart_check.set_checked(
-                crate::autostart::is_enabled(app),
-            );
+            let _ = autostart_check.set_checked(crate::autostart::is_enabled(app));
         }
         ID_TEST_NOTICE => crate::notifications::emit_sample(app),
         ID_QUIT => app.exit(0),

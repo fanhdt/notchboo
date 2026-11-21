@@ -1,4 +1,3 @@
-
 use serde::Serialize;
 
 /// Nama event ke React; didengarkan oleh Mochi untuk mengikuti kursor dengan mata.
@@ -28,21 +27,17 @@ impl GazeTracker {
     /// `cursor` dan `anchor` dalam piksel fisik layar. `anchor` adalah titik tengah-atas window.
     /// Hasilnya `Some` hanya bila kursor atau anchor bergerak cukup jauh sejak laporan terakhir.
     pub fn update(&mut self, cursor: (f64, f64), anchor: (f64, f64)) -> Option<CursorMoved> {
-        let (Some(last_cursor), Some(last_anchor)) =
-            (self.last_cursor, self.last_anchor)
-        else {
+        let (Some(last_cursor), Some(last_anchor)) = (self.last_cursor, self.last_anchor) else {
             self.last_cursor = Some(cursor);
             self.last_anchor = Some(anchor);
             return None;
         };
 
-        let cursor_moved = (cursor.0 - last_cursor.0).abs()
-            + (cursor.1 - last_cursor.1).abs()
-            >= MIN_MOVE_PX;
+        let cursor_moved =
+            (cursor.0 - last_cursor.0).abs() + (cursor.1 - last_cursor.1).abs() >= MIN_MOVE_PX;
 
-        let anchor_moved = (anchor.0 - last_anchor.0).abs()
-            + (anchor.1 - last_anchor.1).abs()
-            >= MIN_MOVE_PX;
+        let anchor_moved =
+            (anchor.0 - last_anchor.0).abs() + (anchor.1 - last_anchor.1).abs() >= MIN_MOVE_PX;
 
         if !cursor_moved && !anchor_moved {
             return None;
@@ -132,9 +127,6 @@ mod tests {
         let mut gaze = GazeTracker::default();
         gaze.update((960.0, 300.0), ANCHOR);
 
-        assert_eq!(
-            gaze.update((960.0, 300.0), (960.0, 1.0)),
-            None
-        );
+        assert_eq!(gaze.update((960.0, 300.0), (960.0, 1.0)), None);
     }
 }

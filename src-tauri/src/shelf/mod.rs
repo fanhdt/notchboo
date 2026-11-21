@@ -1,4 +1,3 @@
-
 //! Quick Shelf: ruang kerja sementara untuk file, catatan, dan snippet.
 //!
 //! - `model`: tipe data dan validasi (tanpa Tauri)
@@ -15,14 +14,14 @@ mod model;
 mod ops;
 mod state;
 mod storage;
-pub mod window;
 #[cfg(test)]
 mod testutil;
+pub mod window;
 
 use std::{
     sync::{
-        mpsc::{self, RecvTimeoutError, Sender},
         Mutex, OnceLock,
+        mpsc::{self, RecvTimeoutError, Sender},
     },
     thread::{self, JoinHandle},
     time::Duration,
@@ -30,9 +29,9 @@ use std::{
 
 use tauri::{AppHandle, Manager};
 
-pub use self::state::ShelfState;
 use self::db::Db;
 use self::model::now_ms;
+pub use self::state::ShelfState;
 use self::storage::Storage;
 
 /// Folder di dalam data lokal aplikasi (`%LOCALAPPDATA%\com.notchboo.app\`).

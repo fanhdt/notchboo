@@ -1,4 +1,3 @@
-
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -433,10 +432,8 @@ impl AppSettings {
             return Err(SettingsError::InvalidValue("features.sound.volume"));
         }
 
-        if !matches!(self.features.pomodoro.flow_ratio, 3 | 4 | 5) {
-            return Err(SettingsError::InvalidValue(
-                "features.pomodoro.flowRatio",
-            ));
+        if !matches!(self.features.pomodoro.flow_ratio, 3..=5) {
+            return Err(SettingsError::InvalidValue("features.pomodoro.flowRatio"));
         }
 
         let water = &self.features.water_reminder;
@@ -448,9 +445,7 @@ impl AppSettings {
         }
 
         if !(1000..=4000).contains(&water.goal_ml) {
-            return Err(SettingsError::InvalidValue(
-                "features.waterReminder.goalMl",
-            ));
+            return Err(SettingsError::InvalidValue("features.waterReminder.goalMl"));
         }
 
         if !(50..=1000).contains(&water.glass_ml) {
@@ -459,27 +454,20 @@ impl AppSettings {
             ));
         }
 
-        if water.start_hour > 20
-            || water.end_hour > 24
-            || water.end_hour < water.start_hour + 4
-        {
+        if water.start_hour > 20 || water.end_hour > 24 || water.end_hour < water.start_hour + 4 {
             return Err(SettingsError::InvalidValue(
                 "features.waterReminder.activeHours",
             ));
         }
 
-        if let Some(days) = self.privacy.retention_days {
-            if days == 0 {
-                return Err(SettingsError::InvalidValue(
-                    "privacy.retentionDays",
-                ));
-            }
+        if let Some(days) = self.privacy.retention_days
+            && days == 0
+        {
+            return Err(SettingsError::InvalidValue("privacy.retentionDays"));
         }
 
         if self.features.clipboard.max_items == 0 {
-            return Err(SettingsError::InvalidValue(
-                "features.clipboard.maxItems",
-            ));
+            return Err(SettingsError::InvalidValue("features.clipboard.maxItems"));
         }
 
         if self.features.focus.default_duration_min == 0 {
@@ -575,14 +563,14 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_schema_version() {
-        let mut settings = AppSettings::default();
-        settings.version = SETTINGS_VERSION + 1;
+        let settings = AppSettings {
+            version: SETTINGS_VERSION + 1,
+            ..AppSettings::default()
+        };
 
         assert_eq!(
             settings.validate(),
-            Err(SettingsError::UnsupportedVersion(
-                SETTINGS_VERSION + 1
-            ))
+            Err(SettingsError::UnsupportedVersion(SETTINGS_VERSION + 1))
         );
     }
 
@@ -604,9 +592,7 @@ mod tests {
 
         assert_eq!(
             settings.validate(),
-            Err(SettingsError::InvalidValue(
-                "features.pomodoro.flowRatio"
-            ))
+            Err(SettingsError::InvalidValue("features.pomodoro.flowRatio"))
         );
     }
 
@@ -631,9 +617,7 @@ mod tests {
 
         assert_eq!(
             settings.validate(),
-            Err(SettingsError::InvalidValue(
-                "privacy.retentionDays"
-            ))
+            Err(SettingsError::InvalidValue("privacy.retentionDays"))
         );
     }
 

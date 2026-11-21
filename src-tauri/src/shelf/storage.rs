@@ -32,14 +32,41 @@ static STAGE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Nama perangkat yang dilarang Windows sebagai nama file (dengan atau tanpa ekstensi).
 const RESERVED_NAMES: &[&str] = &[
-    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1",
-    "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
 /// Ekstensi yang dijalankan (bukan sekadar dibaca) bila dibuka lewat aplikasi default Windows.
 const RISKY_EXTENSIONS: &[&str] = &[
-    "exe", "com", "bat", "cmd", "ps1", "psm1", "vbs", "vbe", "js", "jse", "wsf", "wsh", "msi", "msp", "scr", "hta",
-    "lnk", "url", "reg", "jar", "cpl", "dll", "pif", "appx", "msix", "application", "gadget", "inf", "scf",
+    "exe",
+    "com",
+    "bat",
+    "cmd",
+    "ps1",
+    "psm1",
+    "vbs",
+    "vbe",
+    "js",
+    "jse",
+    "wsf",
+    "wsh",
+    "msi",
+    "msp",
+    "scr",
+    "hta",
+    "lnk",
+    "url",
+    "reg",
+    "jar",
+    "cpl",
+    "dll",
+    "pif",
+    "appx",
+    "msix",
+    "application",
+    "gadget",
+    "inf",
+    "scf",
 ];
 
 // ---------- Nama file ----------
@@ -63,23 +90,35 @@ fn split_extension(name: &str) -> (&str, Option<&str>) {
 pub fn sanitize_file_name(original: &str) -> String {
     let cleaned: String = original
         .chars()
-        .map(|c| if c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') { '_' } else { c })
+        .map(|c| {
+            if c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') {
+                '_'
+            } else {
+                c
+            }
+        })
         .collect();
 
-    let trimmed = cleaned.trim_start().trim_end_matches(|c: char| c == '.' || c.is_whitespace());
+    let trimmed = cleaned
+        .trim_start()
+        .trim_end_matches(|c: char| c == '.' || c.is_whitespace());
     if trimmed.is_empty() {
         return "file".to_string();
     }
 
     let mut name = trimmed.to_string();
     let base = name.split('.').next().unwrap_or("");
-    if RESERVED_NAMES.iter().any(|reserved| reserved.eq_ignore_ascii_case(base)) {
+    if RESERVED_NAMES
+        .iter()
+        .any(|reserved| reserved.eq_ignore_ascii_case(base))
+    {
         name.insert(0, '_');
     }
 
     let (stem, extension) = split_extension(&name);
     let extension = extension.map(|e| truncate_chars(e, MAX_EXTENSION_CHARS));
-    let budget = MAX_STORED_NAME_CHARS.saturating_sub(extension.as_ref().map_or(0, |e| e.chars().count() + 1));
+    let budget = MAX_STORED_NAME_CHARS
+        .saturating_sub(extension.as_ref().map_or(0, |e| e.chars().count() + 1));
     let stem = truncate_chars(stem, budget);
 
     let rebuilt = match extension {
@@ -88,7 +127,11 @@ pub fn sanitize_file_name(original: &str) -> String {
     };
     let rebuilt = rebuilt.trim_end_matches(|c: char| c == '.' || c.is_whitespace());
 
-    if rebuilt.is_empty() { "file".to_string() } else { rebuilt.to_string() }
+    if rebuilt.is_empty() {
+        "file".to_string()
+    } else {
+        rebuilt.to_string()
+    }
 }
 
 /// Ekstensi huruf kecil tanpa titik, atau `None`.
@@ -100,7 +143,9 @@ pub fn extension_of(name: &str) -> Option<String> {
 }
 
 pub fn is_risky_extension(extension: &str) -> bool {
-    RISKY_EXTENSIONS.iter().any(|risky| risky.eq_ignore_ascii_case(extension))
+    RISKY_EXTENSIONS
+        .iter()
+        .any(|risky| risky.eq_ignore_ascii_case(extension))
 }
 
 // ---------- Kegagalan impor ----------
@@ -118,9 +163,15 @@ impl fmt::Display for ImportError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NotFound => f.write_str("File tidak ditemukan."),
-            Self::IsDirectory => f.write_str("Folder belum didukung. Impor file di dalamnya satu per satu."),
+            Self::IsDirectory => {
+                f.write_str("Folder belum didukung. Impor file di dalamnya satu per satu.")
+            }
             Self::NotRegularFile => f.write_str("Bukan file biasa."),
-            Self::TooLarge { limit } => write!(f, "Ukuran file melebihi batas {} GB.", limit / (1024 * 1024 * 1024)),
+            Self::TooLarge { limit } => write!(
+                f,
+                "Ukuran file melebihi batas {} GB.",
+                limit / (1024 * 1024 * 1024)
+            ),
             Self::Io(message) => write!(f, "Gagal menyalin: {message}"),
         }
     }
@@ -145,7 +196,10 @@ pub struct Storage {
 
 impl Storage {
     pub fn new(root: PathBuf) -> Self {
-        Self { root, max_file_bytes: DEFAULT_MAX_FILE_BYTES }
+        Self {
+            root,
+            max_file_bytes: DEFAULT_MAX_FILE_BYTES,
+        }
     }
 
     #[cfg(test)]
@@ -170,7 +224,11 @@ impl Storage {
     /// "diunduh dari internet" yang memicu peringatan SmartScreen saat file dibuka.
     pub fn stage(&self, source: &Path) -> Result<Staged, ImportError> {
         let metadata = fs::metadata(source).map_err(|error| {
-            if error.kind() == io::ErrorKind::NotFound { ImportError::NotFound } else { ImportError::Io(error.to_string()) }
+            if error.kind() == io::ErrorKind::NotFound {
+                ImportError::NotFound
+            } else {
+                ImportError::Io(error.to_string())
+            }
         })?;
 
         if metadata.is_dir() {
@@ -180,7 +238,9 @@ impl Storage {
             return Err(ImportError::NotRegularFile);
         }
         if metadata.len() > self.max_file_bytes {
-            return Err(ImportError::TooLarge { limit: self.max_file_bytes });
+            return Err(ImportError::TooLarge {
+                limit: self.max_file_bytes,
+            });
         }
 
         let original_name = source
@@ -214,11 +274,19 @@ impl Storage {
         // setelah pemeriksaan metadata awal.
         if size_bytes > self.max_file_bytes {
             let _ = fs::remove_dir_all(&tmp_dir);
-            return Err(ImportError::TooLarge { limit: self.max_file_bytes });
+            return Err(ImportError::TooLarge {
+                limit: self.max_file_bytes,
+            });
         }
 
         let extension = extension_of(&stored_name);
-        Ok(Staged { tmp_dir, stored_name, original_name, size_bytes, extension })
+        Ok(Staged {
+            tmp_dir,
+            stored_name,
+            original_name,
+            size_bytes,
+            extension,
+        })
     }
 
     /// Tahap 2: memindahkan folder sementara menjadi `files/<id>/`. Mengembalikan path relatif.
@@ -264,12 +332,12 @@ impl Storage {
 
     /// Menghapus folder item. Folder yang memang sudah tidak ada dianggap berhasil.
     pub fn remove_item(&self, rel: &str) -> io::Result<()> {
-        let file = self
-            .resolve(rel)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path penyimpanan tidak valid"))?;
-        let dir = file
-            .parent()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path penyimpanan tidak valid"))?;
+        let file = self.resolve(rel).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "path penyimpanan tidak valid")
+        })?;
+        let dir = file.parent().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "path penyimpanan tidak valid")
+        })?;
 
         match fs::remove_dir_all(dir) {
             Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
@@ -297,9 +365,11 @@ impl Storage {
                 rest.split('-')
                     .next()
                     .and_then(|stamp| stamp.parse::<i64>().ok())
-                    .map_or(true, |stamp| stamp < stale_before_ms)
+                    .is_none_or(|stamp| stamp < stale_before_ms)
             } else {
-                name.parse::<i64>().map(|id| !known_ids.contains(&id)).unwrap_or(false)
+                name.parse::<i64>()
+                    .map(|id| !known_ids.contains(&id))
+                    .unwrap_or(false)
             };
 
             if orphan && fs::remove_dir_all(entry.path()).is_ok() {
@@ -313,7 +383,7 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shelf::testutil::{write_file, TempDir};
+    use crate::shelf::testutil::{TempDir, write_file};
 
     fn storage(tmp: &TempDir) -> Storage {
         let storage = Storage::new(tmp.path().join("shelf"));
@@ -362,7 +432,15 @@ mod tests {
 
     #[test]
     fn sanitizing_is_idempotent() {
-        for input in ["a<b>.txt", "CON", "..", "x ", &"é".repeat(300), &format!("{}.{}", "a".repeat(200), "b".repeat(30)), "con.tar.gz"] {
+        for input in [
+            "a<b>.txt",
+            "CON",
+            "..",
+            "x ",
+            &"é".repeat(300),
+            &format!("{}.{}", "a".repeat(200), "b".repeat(30)),
+            "con.tar.gz",
+        ] {
             let once = sanitize_file_name(input);
             assert_eq!(sanitize_file_name(&once), once, "input: {input:?}");
         }
@@ -373,7 +451,9 @@ mod tests {
         assert_eq!(extension_of("Archive.TAR.GZ").as_deref(), Some("gz"));
         assert_eq!(extension_of("noext"), None);
         assert_eq!(extension_of(".gitignore"), None);
-        assert!(is_risky_extension("exe") && is_risky_extension("PS1") && is_risky_extension("lnk"));
+        assert!(
+            is_risky_extension("exe") && is_risky_extension("PS1") && is_risky_extension("lnk")
+        );
         assert!(!is_risky_extension("txt") && !is_risky_extension("pdf"));
     }
 
@@ -384,7 +464,10 @@ mod tests {
         let storage = storage(&tmp);
 
         let staged = storage.stage(&source).unwrap();
-        assert_eq!((staged.stored_name.as_str(), staged.size_bytes), ("asli.txt", 4));
+        assert_eq!(
+            (staged.stored_name.as_str(), staged.size_bytes),
+            ("asli.txt", 4)
+        );
         assert_eq!(staged.extension.as_deref(), Some("txt"));
         assert_eq!(fs::read(staged.tmp_dir.join("asli.txt")).unwrap(), b"halo");
         assert_eq!(fs::read(&source).unwrap(), b"halo");
@@ -395,13 +478,26 @@ mod tests {
         let tmp = TempDir::new("reject");
         let storage = storage(&tmp).with_max_file_bytes(3);
 
-        assert_eq!(storage.stage(tmp.path()).unwrap_err(), ImportError::IsDirectory);
-        assert_eq!(storage.stage(&tmp.path().join("tidak-ada.txt")).unwrap_err(), ImportError::NotFound);
+        assert_eq!(
+            storage.stage(tmp.path()).unwrap_err(),
+            ImportError::IsDirectory
+        );
+        assert_eq!(
+            storage
+                .stage(&tmp.path().join("tidak-ada.txt"))
+                .unwrap_err(),
+            ImportError::NotFound
+        );
 
         let big = write_file(tmp.path(), "besar.bin", b"12345");
-        assert!(matches!(storage.stage(&big).unwrap_err(), ImportError::TooLarge { .. }));
+        assert!(matches!(
+            storage.stage(&big).unwrap_err(),
+            ImportError::TooLarge { .. }
+        ));
         // Penolakan terjadi sebelum ada yang disalin: tidak ada folder sementara tersisa.
-        let leftovers = fs::read_dir(tmp.path().join("shelf").join(FILES_DIR)).unwrap().count();
+        let leftovers = fs::read_dir(tmp.path().join("shelf").join(FILES_DIR))
+            .unwrap()
+            .count();
         assert_eq!(leftovers, 0);
     }
 
@@ -455,7 +551,10 @@ mod tests {
             "files/1/a:b.txt",
             "",
         ] {
-            assert!(storage.resolve(bad).is_none(), "seharusnya ditolak: {bad:?}");
+            assert!(
+                storage.resolve(bad).is_none(),
+                "seharusnya ditolak: {bad:?}"
+            );
         }
         assert!(storage.remove_item("../x").is_err());
     }
@@ -467,7 +566,13 @@ mod tests {
         let files = tmp.path().join("shelf").join(FILES_DIR);
         let now = now_ms();
 
-        for dir in ["1", "2", ".incoming-5-0", &format!(".incoming-{}-0", now + 60_000), "catatan-pribadi"] {
+        for dir in [
+            "1",
+            "2",
+            ".incoming-5-0",
+            &format!(".incoming-{}-0", now + 60_000),
+            "catatan-pribadi",
+        ] {
             fs::create_dir_all(files.join(dir)).unwrap();
         }
         fs::write(files.join("readme.txt"), b"x").unwrap();

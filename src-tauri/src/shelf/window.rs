@@ -36,16 +36,20 @@ pub fn open(app: &AppHandle) -> tauri::Result<()> {
 }
 
 fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
-    let window = WebviewWindowBuilder::new(app, SHELF_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
-        .title(TITLE)
-        .inner_size(DEFAULT_SIZE.0, DEFAULT_SIZE.1)
-        .min_inner_size(MIN_SIZE.0, MIN_SIZE.1)
-        .center()
-        .decorations(false)
-        .resizable(true)
-        .background_color(BACKGROUND)
-        .visible(false)
-        .build()?;
+    let window = WebviewWindowBuilder::new(
+        app,
+        SHELF_WINDOW_LABEL,
+        WebviewUrl::App("index.html".into()),
+    )
+    .title(TITLE)
+    .inner_size(DEFAULT_SIZE.0, DEFAULT_SIZE.1)
+    .min_inner_size(MIN_SIZE.0, MIN_SIZE.1)
+    .center()
+    .decorations(false)
+    .resizable(true)
+    .background_color(BACKGROUND)
+    .visible(false)
+    .build()?;
 
     // Tombol close (dan Alt+F4) hanya menyembunyikan window.
     let handle = window.clone();

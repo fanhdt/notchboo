@@ -1,5 +1,4 @@
-
- //! Menjalankan Notchboo otomatis saat pengguna masuk ke Windows (atau macOS).
+//! Menjalankan Notchboo otomatis saat pengguna masuk ke Windows (atau macOS).
 //!
 //! Pertama kali aplikasi dijalankan setelah dipasang, mulai-otomatis dinyalakan. Pengguna bisa
 //! mematikannya kapan saja lewat menu tray ("Jalankan saat sistem menyala"); pilihan itu dihormati
@@ -78,7 +77,11 @@ pub fn set_enabled(app: &AppHandle, enabled: bool) {
     if let Err(error) = result {
         eprintln!(
             "gagal {} autostart: {error}",
-            if enabled { "mengaktifkan" } else { "menonaktifkan" }
+            if enabled {
+                "mengaktifkan"
+            } else {
+                "menonaktifkan"
+            }
         );
     }
 }

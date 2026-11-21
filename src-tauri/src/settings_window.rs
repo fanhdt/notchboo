@@ -1,9 +1,5 @@
-
 use tauri::window::Color;
-use tauri::{
-    AppHandle, Manager, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder, WindowEvent,
-};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 
 pub const SETTINGS_WINDOW_LABEL: &str = "settings";
 
@@ -54,9 +50,7 @@ fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
             api.prevent_close();
 
             if let Err(error) = handle.hide() {
-                eprintln!(
-                    "[Settings] Gagal menyembunyikan window: {error}"
-                );
+                eprintln!("[Settings] Gagal menyembunyikan window: {error}");
             }
         }
     });
@@ -77,6 +71,5 @@ fn reveal(window: &WebviewWindow) -> tauri::Result<()> {
 /// Window dibuat secara asynchronous agar tidak deadlock di Windows.
 #[tauri::command(async)]
 pub fn settings_open_window(app: AppHandle) -> Result<(), String> {
-    open(&app)
-        .map_err(|error| format!("Tidak bisa membuka Pengaturan: {error}"))
+    open(&app).map_err(|error| format!("Tidak bisa membuka Pengaturan: {error}"))
 }

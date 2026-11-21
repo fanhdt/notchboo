@@ -1,4 +1,3 @@
-
 mod activity;
 mod autostart;
 mod cursor_geometry;
@@ -9,8 +8,8 @@ mod notifications;
 mod settings;
 mod settings_commands;
 mod settings_store;
-mod shortcuts;
 mod settings_window;
+mod shortcuts;
 
 // Bagian yang memakai API sistem punya satu berkas per platform;
 // bentuk publiknya sama.
@@ -53,7 +52,6 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        
         .manage(island::IslandShared::default())
         .manage(foreground::ForegroundShared::default())
         .manage(monitor::MonitorControl::default())
@@ -65,21 +63,17 @@ pub fn run() {
                 .map_err(std::io::Error::other)?
                 .join("settings.json");
 
-           let settings_store = settings_store::SettingsStore::new(settings_path);
+            let settings_store = settings_store::SettingsStore::new(settings_path);
 
-let settings = settings_store
-    .load_or_default()
-    .map_err(std::io::Error::other)?;
+            let settings = settings_store
+                .load_or_default()
+                .map_err(std::io::Error::other)?;
 
-app.manage(settings_store);
+            app.manage(settings_store);
 
-if let Err(error) =
-    shortcuts::register_shortcuts(app.handle(), &settings.shortcuts)
-{
-    eprintln!(
-        "[Shortcuts] Gagal mendaftarkan shortcut saat startup: {error}"
-    );
-}
+            if let Err(error) = shortcuts::register_shortcuts(app.handle(), &settings.shortcuts) {
+                eprintln!("[Shortcuts] Gagal mendaftarkan shortcut saat startup: {error}");
+            }
 
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -116,14 +110,13 @@ if let Err(error) =
         .invoke_handler(tauri::generate_handler![
             // Centralized settings
 
-         // Centralized settings
-        settings_commands::settings_load,
-        settings_commands::settings_save,
-        settings_commands::settings_export,
-        settings_commands::settings_preview_import,
-        settings_commands::settings_confirm_import,
-        settings_window::settings_open_window,
-
+            // Centralized settings
+            settings_commands::settings_load,
+            settings_commands::settings_save,
+            settings_commands::settings_export,
+            settings_commands::settings_preview_import,
+            settings_commands::settings_confirm_import,
+            settings_window::settings_open_window,
             // Existing commands
             foreground::get_foreground_busy,
             island::set_island_hitbox,

@@ -1,9 +1,4 @@
-
-use crate::{
-    settings::AppSettings,
-    settings_store::SettingsStore,
-    shortcuts,
-};
+use crate::{settings::AppSettings, settings_store::SettingsStore, shortcuts};
 
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, State};
@@ -12,9 +7,7 @@ pub const SETTINGS_CHANGED_EVENT: &str = "settings-changed";
 
 /// Memuat konfigurasi terbaru dari penyimpanan lokal.
 #[tauri::command]
-pub fn settings_load(
-    store: State<'_, SettingsStore>,
-) -> Result<AppSettings, String> {
+pub fn settings_load(store: State<'_, SettingsStore>) -> Result<AppSettings, String> {
     store.load_or_default()
 }
 
@@ -29,18 +22,12 @@ pub fn settings_save(
 ) -> Result<AppSettings, String> {
     let previous = store.load_or_default()?;
 
-    shortcuts::replace_shortcuts(
-        &app,
-        &previous.shortcuts,
-        &settings.shortcuts,
-    )?;
+    shortcuts::replace_shortcuts(&app, &previous.shortcuts, &settings.shortcuts)?;
 
     if let Err(error) = store.save(&settings) {
-        if let Err(rollback_error) = shortcuts::replace_shortcuts(
-            &app,
-            &settings.shortcuts,
-            &previous.shortcuts,
-        ) {
+        if let Err(rollback_error) =
+            shortcuts::replace_shortcuts(&app, &settings.shortcuts, &previous.shortcuts)
+        {
             return Err(format!(
                 "Gagal menyimpan konfigurasi: {error}. \
                  Gagal memulihkan shortcut sebelumnya: {rollback_error}"
@@ -57,10 +44,7 @@ pub fn settings_save(
 
 /// Mengekspor konfigurasi aktif ke file JSON.
 #[tauri::command]
-pub fn settings_export(
-    store: State<'_, SettingsStore>,
-    file_path: String,
-) -> Result<(), String> {
+pub fn settings_export(store: State<'_, SettingsStore>, file_path: String) -> Result<(), String> {
     let path = PathBuf::from(file_path);
 
     store.export_to(path)
@@ -69,9 +53,7 @@ pub fn settings_export(
 /// Membaca dan memvalidasi file konfigurasi untuk preview.
 /// Tidak mengubah konfigurasi aktif.
 #[tauri::command]
-pub fn settings_preview_import(
-    file_path: String,
-) -> Result<AppSettings, String> {
+pub fn settings_preview_import(file_path: String) -> Result<AppSettings, String> {
     SettingsStore::read_import_file(PathBuf::from(file_path))
 }
 
@@ -85,9 +67,7 @@ pub fn settings_confirm_import(
     store: State<'_, SettingsStore>,
     file_path: String,
 ) -> Result<AppSettings, String> {
-    let imported = SettingsStore::read_import_file(
-        PathBuf::from(file_path),
-    )?;
+    let imported = SettingsStore::read_import_file(PathBuf::from(file_path))?;
 
     let previous = store.load_or_default()?;
 
@@ -95,19 +75,13 @@ pub fn settings_confirm_import(
     let backup_path = store.backup_current()?;
 
     // Terapkan shortcut baru terlebih dahulu.
-    shortcuts::replace_shortcuts(
-        &app,
-        &previous.shortcuts,
-        &imported.shortcuts,
-    )?;
+    shortcuts::replace_shortcuts(&app, &previous.shortcuts, &imported.shortcuts)?;
 
     // Simpan konfigurasi hasil import.
     if let Err(error) = store.save(&imported) {
-        if let Err(rollback_error) = shortcuts::replace_shortcuts(
-            &app,
-            &imported.shortcuts,
-            &previous.shortcuts,
-        ) {
+        if let Err(rollback_error) =
+            shortcuts::replace_shortcuts(&app, &imported.shortcuts, &previous.shortcuts)
+        {
             return Err(format!(
                 "Gagal menyimpan konfigurasi import: {error}. \
                  Gagal memulihkan shortcut: {rollback_error}. \
@@ -134,16 +108,8 @@ pub fn settings_confirm_import(
 }
 
 /// Mengirim event perubahan konfigurasi ke frontend.
-fn emit_settings_changed(
-    app: &AppHandle,
-    settings: &AppSettings,
-) {
-    if let Err(error) = app.emit(
-        SETTINGS_CHANGED_EVENT,
-        settings.clone(),
-    ) {
-        eprintln!(
-            "[Settings] Gagal mengirim event perubahan: {error}"
-        );
+fn emit_settings_changed(app: &AppHandle, settings: &AppSettings) {
+    if let Err(error) = app.emit(SETTINGS_CHANGED_EVENT, settings.clone()) {
+        eprintln!("[Settings] Gagal mengirim event perubahan: {error}");
     }
 }
