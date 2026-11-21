@@ -12,6 +12,7 @@ mod settings_commands;
 mod settings_store;
 mod settings_window;
 mod shortcuts;
+mod launcher_window;
 
 // Bagian yang memakai API sistem punya satu berkas per platform;
 // bentuk publiknya sama.
@@ -246,6 +247,7 @@ pub fn run() {
             clipboard::commands::clipboard_set_capture_paused,
             clipboard::commands::clipboard_get_capture_paused,
             clipboard_window::clipboard_open_window,
+            launcher_window::launcher_open_window,
         ]);
 
     let app = builder

@@ -129,6 +129,11 @@ fn handle_shortcut_action(app: &AppHandle, action: &str) {
                 eprintln!("[Shortcuts] Gagal membuka Clipboard Manager: {error}");
             }
         }
+        "openLauncher" => {
+    if let Err(error) = crate::launcher_window::open(app) {
+        eprintln!("[Shortcuts] Gagal membuka Launcher: {error}");
+    }
+}
         _ => {
             // Aksi lainnya akan dihubungkan ketika fitur terkait siap.
         }

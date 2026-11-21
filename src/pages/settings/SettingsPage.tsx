@@ -686,6 +686,23 @@ export default function SettingsPage() {
                   </div>
                 </SettingRow>
 
+                <div className="mb-3 mt-7 border-b border-white/10 pb-2">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-white/55">Quick Launcher</h3>
+                </div>
+
+                <SettingRow title="Aktifkan Quick Launcher" description="Izinkan Launcher dibuka menggunakan global keyboard shortcut.">
+                  <Toggle
+                    label="Quick Launcher"
+                    checked={settings.features.launcher.enabled}
+                    onChange={(value) =>
+                      updateFeature("launcher", {
+                        ...settings.features.launcher,
+                        enabled: value,
+                      })
+                    }
+                  />
+                </SettingRow>
+
                 <p className="mt-3 rounded-lg border border-white/5 bg-white/[0.025] p-3 text-xs leading-relaxed text-white/40">Clipboard Manager hanya menyimpan teks. Data disimpan secara lokal di perangkat dan tidak dikirim ke server.</p>
 
                 <p className="py-3 text-xs leading-relaxed text-white/35">Clipboard, Launcher, Notifications, dan Focus merupakan konfigurasi fitur roadmap. Pengaturan tersedia setelah implementasi fiturnya dimulai.</p>
