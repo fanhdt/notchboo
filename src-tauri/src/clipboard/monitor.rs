@@ -10,28 +10,28 @@ mod windows_listener {
     use tauri::{AppHandle, Manager};
 
     use windows_sys::Win32::{
-    Foundation::{
-        CloseHandle, ERROR_CLASS_ALREADY_EXISTS, GetLastError, HWND, LPARAM, LRESULT, WPARAM,
-    },
-    System::{
-        DataExchange::{
-            AddClipboardFormatListener, CloseClipboard, GetClipboardData, OpenClipboard,
-            RemoveClipboardFormatListener,
+        Foundation::{
+            CloseHandle, ERROR_CLASS_ALREADY_EXISTS, GetLastError, HWND, LPARAM, LRESULT, WPARAM,
         },
-        LibraryLoader::GetModuleHandleW,
-        Memory::{GlobalLock, GlobalSize, GlobalUnlock},
-        Ole::CF_UNICODETEXT,
-        Threading::{
-            GetCurrentThreadId, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-            QueryFullProcessImageNameW,
+        System::{
+            DataExchange::{
+                AddClipboardFormatListener, CloseClipboard, GetClipboardData, OpenClipboard,
+                RemoveClipboardFormatListener,
+            },
+            LibraryLoader::GetModuleHandleW,
+            Memory::{GlobalLock, GlobalSize, GlobalUnlock},
+            Ole::CF_UNICODETEXT,
+            Threading::{
+                GetCurrentThreadId, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+                QueryFullProcessImageNameW,
+            },
         },
-    },
-    UI::WindowsAndMessaging::{
-        CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetForegroundWindow,
-        GetMessageW, GetWindowThreadProcessId, PostThreadMessageW, RegisterClassW,
-        TranslateMessage, MSG, WNDCLASSW, WM_CLIPBOARDUPDATE, WM_QUIT, WS_POPUP,
-    },
-};
+        UI::WindowsAndMessaging::{
+            CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetForegroundWindow,
+            GetMessageW, GetWindowThreadProcessId, MSG, PostThreadMessageW, RegisterClassW,
+            TranslateMessage, WM_CLIPBOARDUPDATE, WM_QUIT, WNDCLASSW, WS_POPUP,
+        },
+    };
 
     use crate::settings_store::SettingsStore;
 
@@ -107,8 +107,6 @@ mod windows_listener {
 
         // WM_QUIT menghentikan message loop pada thread listener.
         unsafe {
-            use windows_sys::Win32::System::Threading::PostThreadMessageW;
-
             let _ = PostThreadMessageW(worker.thread_id, WM_QUIT, 0, 0);
         }
 
@@ -296,7 +294,7 @@ mod windows_listener {
         }
 
         let result = unsafe {
-            let handle = GetClipboardData(CF_UNICODETEXT);
+            let handle = GetClipboardData(CF_UNICODETEXT as u32);
 
             if handle.is_null() {
                 None
