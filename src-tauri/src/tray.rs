@@ -1,7 +1,7 @@
-//! Ikon Mochi di system tray.
-//!
-//! Menu tray menyediakan kontrol Peek Behavior, autostart, notifikasi uji,
-//! dan keluar. Preferensi Peek Behavior disimpan melalui centralized SettingsStore.
+// Ikon Mochi di system tray.
+//
+// Menu tray menyediakan kontrol Peek Behavior, autostart, notifikasi uji,
+// dan keluar. Semua preferensi disimpan melalui centralized SettingsStore.
 
 use std::fs;
 use std::path::PathBuf;
@@ -13,8 +13,9 @@ use tauri::{
 };
 
 use crate::{
+    autostart,
     settings::{AppSettings, PeekBehavior},
-    settings_commands::SETTINGS_CHANGED_EVENT,
+    settings_commands::{self, SETTINGS_CHANGED_EVENT},
     settings_store::SettingsStore,
 };
 
@@ -27,15 +28,11 @@ const ID_AUTOSTART: &str = "autostart";
 const ID_TEST_NOTICE: &str = "test_notice";
 const ID_QUIT: &str = "quit";
 
-/// Perilaku Island: kapan bersembunyi ke atas atau tetap terbuka.
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub enum PeekMode {
-    /// Bersembunyi saat aplikasi lain aktif.
     #[default]
     WhenBusy,
-    /// Selalu bersembunyi saat Island tidak dibuka.
     Always,
-    /// Island selalu terbuka.
     Standby,
 }
 
@@ -121,7 +118,6 @@ fn load_mode(app: &AppHandle) -> PeekMode {
             }
         }
         Ok(_) => {
-            // Centralized settings sudah memiliki nilai sendiri dan menjadi sumber utama.
             if let Err(error) = fs::remove_file(&legacy_path) {
                 eprintln!("[Settings] Gagal menghapus file Peek Behavior lama: {error}");
             }
@@ -135,8 +131,10 @@ fn load_mode(app: &AppHandle) -> PeekMode {
     current_mode
 }
 
-/// Menyimpan perubahan ke centralized settings sebelum memperbarui menu tray.
+/// Menyimpan Peek Behavior sebelum memperbarui menu tray.
 fn apply_mode(app: &AppHandle, mode: PeekMode, checks: &[(PeekMode, CheckMenuItem<Wry>)]) {
+    let _transaction = settings_commands::lock_settings_transaction();
+
     let store = app.state::<SettingsStore>();
 
     let mut settings: AppSettings = match store.load_or_default() {
@@ -154,13 +152,44 @@ fn apply_mode(app: &AppHandle, mode: PeekMode, checks: &[(PeekMode, CheckMenuIte
         return;
     }
 
-    // Item centang disetel ulang secara eksplisit.
     for (item_mode, item) in checks {
         let _ = item.set_checked(*item_mode == mode);
     }
 
-    // Sinkronisasi seluruh SettingsProvider.
     if let Err(error) = app.emit(SETTINGS_CHANGED_EVENT, settings) {
+        eprintln!("[Settings] Gagal mengirim event settings: {error}");
+    }
+}
+
+/// Mengubah autostart melalui centralized settings.
+fn apply_autostart(app: &AppHandle, enabled: bool, check: &CheckMenuItem<Wry>) {
+    let _transaction = settings_commands::lock_settings_transaction();
+
+    let store = app.state::<SettingsStore>();
+
+    let previous = match store.load_or_default() {
+        Ok(settings) => settings,
+        Err(error) => {
+            eprintln!("[Settings] Gagal memuat konfigurasi: {error}");
+            return;
+        }
+    };
+
+    let mut next = previous.clone();
+    next.general.launch_at_startup = enabled;
+
+    if let Err(error) = settings_commands::apply_settings(app, &store, &previous, &next) {
+        eprintln!("[Autostart] Gagal menerapkan pengaturan: {error}");
+
+        let actual = autostart::is_enabled(app).unwrap_or(previous.general.launch_at_startup);
+
+        let _ = check.set_checked(actual);
+        return;
+    }
+
+    let _ = check.set_checked(enabled);
+
+    if let Err(error) = app.emit(SETTINGS_CHANGED_EVENT, next) {
         eprintln!("[Settings] Gagal mengirim event settings: {error}");
     }
 }
@@ -168,6 +197,11 @@ fn apply_mode(app: &AppHandle, mode: PeekMode, checks: &[(PeekMode, CheckMenuIte
 /// Membuat ikon tray dan memuat mode tersimpan.
 pub fn init(app: &AppHandle) -> tauri::Result<()> {
     let mode = load_mode(app);
+
+    let settings = app
+        .state::<SettingsStore>()
+        .load_or_default()
+        .map_err(std::io::Error::other)?;
 
     let make = |id: &str, label: &str, item_mode: PeekMode| {
         CheckMenuItem::with_id(app, id, label, true, mode == item_mode, None::<&str>)
@@ -180,7 +214,6 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     )?;
 
     let always = make(ID_ALWAYS, "Peek terus-menerus", PeekMode::Always)?;
-
     let standby = make(ID_STANDBY, "Standby (selalu terbuka)", PeekMode::Standby)?;
 
     let autostart_item = CheckMenuItem::with_id(
@@ -188,7 +221,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         ID_AUTOSTART,
         "Jalankan saat sistem menyala",
         true,
-        crate::autostart::is_enabled(app),
+        settings.general.launch_at_startup,
         None::<&str>,
     )?;
 
@@ -201,7 +234,6 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     )?;
 
     let quit = MenuItem::with_id(app, ID_QUIT, "Keluar", true, None::<&str>)?;
-
     let separator = PredefinedMenuItem::separator(app)?;
 
     let menu = Menu::with_items(
@@ -238,9 +270,15 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         ID_ALWAYS => apply_mode(app, PeekMode::Always, &checks),
         ID_STANDBY => apply_mode(app, PeekMode::Standby, &checks),
         ID_AUTOSTART => {
-            crate::autostart::set_enabled(app, !crate::autostart::is_enabled(app));
+            let current = match app.state::<SettingsStore>().load_or_default() {
+                Ok(settings) => settings.general.launch_at_startup,
+                Err(error) => {
+                    eprintln!("[Settings] Gagal memuat konfigurasi autostart: {error}");
+                    return;
+                }
+            };
 
-            let _ = autostart_check.set_checked(crate::autostart::is_enabled(app));
+            apply_autostart(app, !current, &autostart_check);
         }
         ID_TEST_NOTICE => crate::notifications::emit_sample(app),
         ID_QUIT => app.exit(0),

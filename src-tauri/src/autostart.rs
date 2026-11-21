@@ -1,71 +1,60 @@
-//! Menjalankan Notchboo otomatis saat pengguna masuk ke Windows (atau macOS).
-//!
-//! Pertama kali aplikasi dijalankan setelah dipasang, mulai-otomatis dinyalakan. Pengguna bisa
-//! mematikannya kapan saja lewat menu tray ("Jalankan saat sistem menyala"); pilihan itu dihormati
-//! dan tidak dinyalakan lagi, karena penanda "sudah pernah diatur" disimpan di folder konfigurasi.
-
-use std::fs;
+use std::{fs, path::PathBuf};
 
 use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::ManagerExt;
 
-const MARKER_FILE: &str = "autostart-initialized";
+const LEGACY_MARKER_FILE: &str = "autostart-initialized";
+const SETTINGS_MIGRATION_MARKER_FILE: &str = "autostart-settings-migrated";
 
-/// Menyalakan mulai-otomatis satu kali, saat pertama kali aplikasi berjalan.
-pub fn enable_on_first_run(app: &AppHandle) {
-    // Saat pengembangan (`tauri dev`), yang akan terdaftar adalah berkas debug sementara. Jangan.
-    if cfg!(debug_assertions) {
-        return;
-    }
+fn marker_path(app: &AppHandle, filename: &str) -> Result<PathBuf, String> {
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| format!("Gagal mendapatkan direktori konfigurasi: {error}"))?;
 
-    let dir = match app.path().app_config_dir() {
-        Ok(dir) => dir,
-        Err(error) => {
-            eprintln!("gagal mendapatkan direktori konfigurasi autostart: {error}");
-            return;
-        }
-    };
-
-    if let Err(error) = fs::create_dir_all(&dir) {
-        eprintln!("gagal membuat direktori konfigurasi autostart: {error}");
-        return;
-    }
-
-    let marker = dir.join(MARKER_FILE);
-
-    match marker.try_exists() {
-        Ok(true) => return,
-        Ok(false) => {}
-        Err(error) => {
-            eprintln!("gagal memeriksa penanda inisialisasi autostart: {error}");
-            return;
-        }
-    }
-
-    if let Err(error) = app.autolaunch().enable() {
-        eprintln!("gagal mengaktifkan autostart pada penggunaan pertama: {error}");
-        return;
-    }
-
-    // Jika penanda gagal dibuat, autostart mungkin akan diperiksa ulang pada peluncuran berikutnya.
-    if let Err(error) = fs::write(&marker, "1") {
-        eprintln!("gagal menyimpan penanda inisialisasi autostart: {error}");
-    }
+    Ok(config_dir.join(filename))
 }
 
-/// Memeriksa status autostart dari sistem.
-pub fn is_enabled(app: &AppHandle) -> bool {
-    match app.autolaunch().is_enabled() {
-        Ok(enabled) => enabled,
-        Err(error) => {
-            eprintln!("gagal memeriksa status autostart: {error}");
-            false
-        }
-    }
+/// Memeriksa apakah instalasi pernah menggunakan mekanisme autostart lama.
+pub fn has_legacy_marker(app: &AppHandle) -> Result<bool, String> {
+    let path = marker_path(app, LEGACY_MARKER_FILE)?;
+
+    path.try_exists()
+        .map_err(|error| format!("Gagal memeriksa marker autostart lama: {error}"))
 }
 
-/// Mengubah status autostart.
-pub fn set_enabled(app: &AppHandle, enabled: bool) {
+/// Memeriksa apakah migrasi ke centralized settings sudah dilakukan.
+pub fn has_settings_migration_marker(app: &AppHandle) -> Result<bool, String> {
+    let path = marker_path(app, SETTINGS_MIGRATION_MARKER_FILE)?;
+
+    path.try_exists()
+        .map_err(|error| format!("Gagal memeriksa marker migrasi autostart: {error}"))
+}
+
+/// Menandai bahwa migrasi autostart ke centralized settings berhasil.
+pub fn mark_settings_migrated(app: &AppHandle) -> Result<(), String> {
+    let path = marker_path(app, SETTINGS_MIGRATION_MARKER_FILE)?;
+
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Direktori marker autostart tidak valid".to_string())?;
+
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("Gagal membuat direktori konfigurasi: {error}"))?;
+
+    fs::write(path, "1")
+        .map_err(|error| format!("Gagal menyimpan marker migrasi autostart: {error}"))
+}
+
+/// Membaca status autostart dari sistem operasi.
+pub fn is_enabled(app: &AppHandle) -> Result<bool, String> {
+    app.autolaunch()
+        .is_enabled()
+        .map_err(|error| format!("Gagal memeriksa status autostart: {error}"))
+}
+
+/// Mengubah status autostart pada sistem operasi.
+pub fn set_enabled(app: &AppHandle, enabled: bool) -> Result<(), String> {
     let launcher = app.autolaunch();
 
     let result = if enabled {
@@ -74,14 +63,14 @@ pub fn set_enabled(app: &AppHandle, enabled: bool) {
         launcher.disable()
     };
 
-    if let Err(error) = result {
-        eprintln!(
-            "gagal {} autostart: {error}",
+    result.map_err(|error| {
+        format!(
+            "Gagal {} autostart: {error}",
             if enabled {
                 "mengaktifkan"
             } else {
                 "menonaktifkan"
             }
-        );
-    }
+        )
+    })
 }

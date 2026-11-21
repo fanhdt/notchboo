@@ -63,11 +63,64 @@ pub fn run() {
                 .map_err(std::io::Error::other)?
                 .join("settings.json");
 
+            // Periksa sebelum load_or_default membuat file baru.
+            let settings_file_exists = settings_path.try_exists().map_err(std::io::Error::other)?;
+
             let settings_store = settings_store::SettingsStore::new(settings_path);
 
-            let settings = settings_store
+            let mut settings = settings_store
                 .load_or_default()
                 .map_err(std::io::Error::other)?;
+
+            let migration_completed = autostart::has_settings_migration_marker(app.handle())
+                .map_err(std::io::Error::other)?;
+
+            if !migration_completed {
+                let has_legacy_marker =
+                    autostart::has_legacy_marker(app.handle()).map_err(std::io::Error::other)?;
+
+                if has_legacy_marker {
+                    // Instalasi lama: pertahankan preferensi autostart OS pengguna.
+                    let legacy_status =
+                        autostart::is_enabled(app.handle()).map_err(std::io::Error::other)?;
+
+                    settings.general.launch_at_startup = legacy_status;
+
+                    settings_store
+                        .save(&settings)
+                        .map_err(std::io::Error::other)?;
+                } else {
+                    // Tidak ada marker lama:
+                    // gunakan preferensi centralized settings yang tersedia.
+                    // Untuk instalasi baru, nilai ini berasal dari default settings.
+                    let desired = settings.general.launch_at_startup;
+                    let current =
+                        autostart::is_enabled(app.handle()).map_err(std::io::Error::other)?;
+
+                    if current != desired {
+                        autostart::set_enabled(app.handle(), desired)
+                            .map_err(std::io::Error::other)?;
+                    }
+
+                    // Jika settings sudah ada, pastikan nilainya tetap tersimpan.
+                    if !settings_file_exists {
+                        settings_store
+                            .save(&settings)
+                            .map_err(std::io::Error::other)?;
+                    }
+                }
+
+                // Tandai hanya setelah proses migrasi berhasil.
+                autostart::mark_settings_migrated(app.handle()).map_err(std::io::Error::other)?;
+            } else {
+                // Migrasi selesai: centralized settings menjadi sumber kebenaran.
+                let desired = settings.general.launch_at_startup;
+                let current = autostart::is_enabled(app.handle()).map_err(std::io::Error::other)?;
+
+                if current != desired {
+                    autostart::set_enabled(app.handle(), desired).map_err(std::io::Error::other)?;
+                }
+            }
 
             app.manage(settings_store);
 
@@ -92,10 +145,8 @@ pub fn run() {
 
             foreground::start_foreground_watcher(app.handle());
 
-            autostart::enable_on_first_run(app.handle());
-
             if let Err(error) = tray::init(app.handle()) {
-                eprintln!("gagal membuat ikon tray: {error}");
+                eprintln!("Gagal membuat ikon tray: {error}");
             }
 
             media::start_media_watcher(app.handle());
