@@ -23,7 +23,7 @@ function isDefaultSoundSettings(sound: AppSettings["features"]["sound"]): boolea
 }
 
 function isDefaultPomodoroSettings(pomodoro: AppSettings["features"]["pomodoro"]): boolean {
-  return pomodoro.mode === "pomodoro" && pomodoro.flowRatio === 4;
+  return pomodoro.mode === "pomodoro" && pomodoro.flowRatio === 5;
 }
 
 function isDefaultWaterSettings(water: AppSettings["features"]["waterReminder"]): boolean {
@@ -37,76 +37,57 @@ async function migrateLegacySettings(initial: AppSettings): Promise<AppSettings>
 
   const hasLegacySound = legacySound !== null;
   const hasLegacyTimer = legacyTimer.mode !== null || legacyTimer.flowRatio !== null;
-  const hasLegacyWater = legacyWater !== null;
 
-  if (!hasLegacySound && !hasLegacyTimer && !hasLegacyWater) {
+  if (!hasLegacySound && !hasLegacyTimer && !legacyWater) {
     return initial;
   }
 
-  let migrated = false;
+  const soundNeedsMigration = hasLegacySound && isDefaultSoundSettings(initial.features.sound);
+
+  const timerNeedsMigration = hasLegacyTimer && isDefaultPomodoroSettings(initial.features.pomodoro);
+
+  const waterNeedsMigration = legacyWater !== null && isDefaultWaterSettings(initial.features.waterReminder);
 
   const next: AppSettings = {
     ...initial,
     features: {
       ...initial.features,
-      sound: initial.features.sound,
-      pomodoro: initial.features.pomodoro,
-      waterReminder: initial.features.waterReminder,
+      sound:
+        soundNeedsMigration && legacySound
+          ? {
+              volume: legacySound.volume,
+              pomodoro: legacySound.sounds.pomodoro,
+              water: legacySound.sounds.water,
+              task: legacySound.sounds.task,
+              message: legacySound.sounds.message,
+              repeat: legacySound.repeat,
+            }
+          : initial.features.sound,
+      pomodoro: timerNeedsMigration
+        ? {
+            ...initial.features.pomodoro,
+            ...(legacyTimer.mode !== null ? { mode: legacyTimer.mode } : {}),
+            ...(legacyTimer.flowRatio !== null ? { flowRatio: legacyTimer.flowRatio } : {}),
+          }
+        : initial.features.pomodoro,
+      waterReminder:
+        waterNeedsMigration && legacyWater
+          ? {
+              ...initial.features.waterReminder,
+              ...legacyWater,
+            }
+          : initial.features.waterReminder,
     },
   };
 
-  // Migrasikan suara hanya jika konfigurasi pusat masih default.
-  if (legacySound && isDefaultSoundSettings(initial.features.sound)) {
-    next.features.sound = {
-      volume: legacySound.volume,
-      pomodoro: legacySound.sounds.pomodoro,
-      water: legacySound.sounds.water,
-      task: legacySound.sounds.task,
-      message: legacySound.sounds.message,
-      repeat: legacySound.repeat,
-    };
+  const hasChanges = soundNeedsMigration || timerNeedsMigration || waterNeedsMigration;
 
-    migrated = true;
-  }
+  // Simpan seluruh perubahan migrasi dalam satu operasi.
+  // Jika gagal, fungsi akan throw dan legacy tidak dibersihkan.
+  const saved = hasChanges ? await saveSettings(next) : initial;
 
-  // Migrasikan timer hanya jika konfigurasi pusat masih default.
-  if (hasLegacyTimer && isDefaultPomodoroSettings(initial.features.pomodoro)) {
-    next.features.pomodoro = {
-      ...initial.features.pomodoro,
-      ...(legacyTimer.mode !== null ? { mode: legacyTimer.mode } : {}),
-      ...(legacyTimer.flowRatio !== null ? { flowRatio: legacyTimer.flowRatio } : {}),
-    };
-
-    migrated = true;
-  }
-
-  // Migrasikan Water Reminder hanya jika konfigurasi pusat masih default.
-  if (legacyWater && isDefaultWaterSettings(initial.features.waterReminder)) {
-    next.features.waterReminder = {
-      ...initial.features.waterReminder,
-      ...legacyWater,
-    };
-
-    migrated = true;
-  }
-
-  if (migrated) {
-    const saved = await saveSettings(next);
-
-    if (hasLegacySound) {
-      clearLegacySoundSettings();
-    }
-
-    if (hasLegacyTimer) {
-      clearLegacyTimerSettings();
-    }
-
-    // Jangan hapus notchboo.water karena masih menyimpan riwayat minum.
-    return saved;
-  }
-
-  // Konfigurasi pusat sudah memiliki prioritas.
-  // Data lama boleh dibersihkan karena tidak digunakan.
+  // Pusat sudah valid dan menjadi sumber kebenaran.
+  // Bersihkan setiap kategori secara independen.
   if (hasLegacySound) {
     clearLegacySoundSettings();
   }
@@ -115,7 +96,8 @@ async function migrateLegacySettings(initial: AppSettings): Promise<AppSettings>
     clearLegacyTimerSettings();
   }
 
-  return initial;
+  // Jangan hapus notchboo.water karena masih menyimpan riwayat minum.
+  return saved;
 }
 
 export function SettingsProvider({ children }: SettingsProviderProps) {
