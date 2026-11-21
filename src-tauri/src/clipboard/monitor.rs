@@ -7,7 +7,7 @@ mod windows_listener {
         thread,
     };
 
-   use tauri::{AppHandle, Emitter, Manager};
+    use tauri::{AppHandle, Emitter, Manager};
 
     use windows_sys::Win32::{
         Foundation::{
@@ -255,7 +255,11 @@ mod windows_listener {
         let source_path = foreground_process_path();
         let source_app = normalize_source_app(source_path.as_deref());
 
-        if is_excluded(source_app.as_deref(), &settings.privacy.excluded_apps) {
+        if is_excluded(
+            source_path.as_deref(),
+            source_app.as_deref(),
+            &settings.privacy.excluded_apps,
+        ) {
             return;
         }
 
@@ -268,30 +272,44 @@ mod windows_listener {
         }
 
         match state.add(
-    &content,
-    source_app.as_deref(),
-    settings.features.clipboard.max_items,
-) {
-    Ok(_) => {
-        if let Err(error) = app.emit("clipboard-updated", ()) {
-            eprintln!("[Clipboard] Gagal mengirim event pembaruan: {error}");
+            &content,
+            source_app.as_deref(),
+            settings.features.clipboard.max_items,
+        ) {
+            Ok(_) => {
+                if let Err(error) = app.emit("clipboard-updated", ()) {
+                    eprintln!("[Clipboard] Gagal mengirim event pembaruan: {error}");
+                }
+            }
+            Err(error) => {
+                // Jangan pernah mencetak isi clipboard ke log.
+                eprintln!("[Clipboard] Gagal menyimpan item: {error}");
+            }
         }
     }
-    Err(error) => {
-        // Jangan pernah mencetak isi clipboard ke log.
-        eprintln!("[Clipboard] Gagal menyimpan item: {error}");
-    }
-}
-    }
 
-    fn is_excluded(source_app: Option<&str>, excluded_apps: &[String]) -> bool {
-        let Some(source_app) = source_app else {
-            return false;
-        };
-
+    fn is_excluded(
+        source_path: Option<&str>,
+        source_app: Option<&str>,
+        excluded_apps: &[String],
+    ) -> bool {
         excluded_apps.iter().any(|excluded| {
-            normalize_source_app(Some(excluded))
-                .is_some_and(|name| name.eq_ignore_ascii_case(source_app))
+            let excluded = excluded.trim();
+
+            if excluded.is_empty() {
+                return false;
+            }
+
+            let is_path = excluded.contains('\\') || excluded.contains('/');
+
+            if is_path {
+                return source_path.is_some_and(|path| path.trim().eq_ignore_ascii_case(excluded));
+            }
+
+            let excluded_name = normalize_source_app(Some(excluded));
+
+            excluded_name
+                .is_some_and(|name| source_app.is_some_and(|app| name.eq_ignore_ascii_case(app)))
         })
     }
 
@@ -308,7 +326,7 @@ mod windows_listener {
             } else {
                 let size = GlobalSize(handle as _);
 
-                if size == 0 || size > MAX_CLIPBOARD_TEXT_BYTES + 2 {
+     if !(2..=MAX_CLIPBOARD_TEXT_BYTES + 2).contains(&size) {
                     None
                 } else {
                     let pointer = GlobalLock(handle as _) as *const u16;
@@ -316,19 +334,21 @@ mod windows_listener {
                     if pointer.is_null() {
                         None
                     } else {
-                        let max_units = (size / 2).min(MAX_CLIPBOARD_TEXT_BYTES / 2);
+                        let max_units = (size / 2).min(MAX_CLIPBOARD_TEXT_BYTES / 2 + 1);
+
                         let units = std::slice::from_raw_parts(pointer, max_units);
 
                         let content = units
                             .iter()
                             .position(|unit| *unit == 0)
-                            .map(|end| String::from_utf16_lossy(&units[..end]));
+                            .and_then(|end| String::from_utf16(&units[..end]).ok())
+                            .filter(|value| {
+                                !value.trim().is_empty() && value.len() <= MAX_CLIPBOARD_TEXT_BYTES
+                            });
 
                         let _ = GlobalUnlock(handle as _);
 
-                        content.filter(|value| {
-                            !value.trim().is_empty() && value.len() <= MAX_CLIPBOARD_TEXT_BYTES
-                        })
+                        content
                     }
                 }
             }

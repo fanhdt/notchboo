@@ -106,7 +106,6 @@ fn register_parsed(app: &AppHandle, shortcuts: &[(&'static str, Shortcut)]) -> R
 }
 
 /// Menangani aksi dari shortcut yang ditekan.
-
 fn handle_shortcut_action(app: &AppHandle, action: &str) {
     match action {
         "toggleIsland" => {
